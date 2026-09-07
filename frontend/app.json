@@ -1,0 +1,96 @@
+{
+  "expo": {
+    "name": "A2salah",
+    "slug": "a2salah",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "sdkVersion": "56.0.0",
+    "android": {
+      "package": "com.a2mation.a2salah",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptiveIcon.png",
+        "backgroundColor": "#0E1320"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_STATE",
+        "android.permission.CHANGE_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "usesCleartextTraffic": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.a2mation.a2salah",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "A2salah uses your location to calculate accurate prayer times for where you are."
+      },
+      "entitlements": {
+        "com.apple.developer.networking.HotspotConfiguration": true
+      }
+    },
+    "plugins": [
+      "expo-status-bar",
+      "expo-location",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#0E1320"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0E1320",
+          "sounds": [
+            "./assets/sounds/salat_low.wav",
+            "./assets/sounds/salat_medium.wav",
+            "./assets/sounds/salat_high.wav",
+            "./assets/sounds/salat_high_1.wav",
+            "./assets/sounds/salat_high_2.wav",
+            "./assets/sounds/salat_high_3.wav",
+            "./assets/sounds/salat_high_4.wav",
+            "./assets/sounds/salat_high_5.wav",
+            "./assets/sounds/salat_high_6.wav",
+            "./assets/sounds/salat_high_7.wav",
+            "./assets/sounds/salat_high_8.wav",
+            "./assets/sounds/salat_high_9.wav",
+            "./assets/sounds/salat_high_10.wav",
+            "./assets/sounds/salat_high_11.wav",
+            "./assets/sounds/salat_high_12.wav",
+            "./assets/sounds/salat_high_13.wav",
+            "./assets/sounds/salat_high_14.wav",
+            "./assets/sounds/salat_high_15.wav"
+          ]
+        }
+      ],
+      "munim-bluetooth",
+      "expo-audio"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "46b9b4d6-6f7a-482b-9447-6fdb9ff9355d"
+      }
+    },
+    "owner": "salahindiaa2mation"
+  }
+}

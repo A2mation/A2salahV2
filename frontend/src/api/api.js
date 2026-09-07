@@ -17,7 +17,7 @@ import { getTune } from '../tune/tuneStore';
 // const BASE_URL = 'http://10.0.2.2:5000/api';
 
 // render url
-const BASE_URL = 'https://a2salahs.onrender.com/api';
+const BASE_URL = 'https://a2salahv2.onrender.com/api';
 
 
 // Without a timeout, a request made while the phone has no real route to
@@ -135,11 +135,5 @@ export const createReminder = (reminder) => api.post('/reminders', reminder);
 export const updateReminder = (id, updates) => api.put(`/reminders/${id}`, updates);
 export const deleteReminder = (id) => api.delete(`/reminders/${id}`);
 export const deleteAllReminders = () => api.delete('/reminders');
-
-export const getWorldCityCatalog = () => api.get('/world-cities/catalog');
-export const getWorldCities = () => api.get('/world-cities');
-export const addWorldCity = (cityKey) => api.post('/world-cities', { cityKey });
-export const deleteWorldCity = (id) => api.delete(`/world-cities/${id}`);
-export const reorderWorldCities = (orderedIds) => api.put('/world-cities/reorder', { orderedIds });
 
 export default api;

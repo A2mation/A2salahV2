@@ -5,7 +5,7 @@ const connectDB = require('./config/db');
 
 const prayerRoutes = require('./routes/prayerRoutes');
 const reminderRoutes = require('./routes/reminderRoutes');
-const worldCityRoutes = require('./routes/worldCityRoutes');
+
 
 const app = express();
 

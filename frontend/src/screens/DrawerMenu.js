@@ -602,6 +602,16 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
               >
                 <Text style={styles.textRowLabel}>A2Gold</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                Linking.openURL("market://dev?id=A2mation").catch(() => {
+                Linking.openURL("https://play.google.com/store/apps/dev?id=A2mation");
+              });
+              }}
+                style={styles.textRow}
+              >
+                <Text style={styles.textRowLabel}>Our other apps</Text>
+              </TouchableOpacity>
             
             
 

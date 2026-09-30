@@ -10,6 +10,7 @@ import DateTuneScreen from '../screens/DateTuneScreen';
 import AboutScreen from '../screens/AboutScreen';
 import { navigationRef } from './navigationRef';
 import LegalScreen from '../screens/LegalScreen';
+import { EspConnectionProvider } from '../wifi/EspConnectionContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -19,7 +20,13 @@ export default function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="Home">
+          {(props) => (
+            <EspConnectionProvider>
+              <HomeScreen {...props} />
+            </EspConnectionProvider>
+          )}
+        </Stack.Screen>
         <Stack.Screen
           name="TuneTimings"
           component={TuneTimingsScreen}

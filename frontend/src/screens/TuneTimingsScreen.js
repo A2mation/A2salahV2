@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { light as colors } from '../theme/colors';
-import { getTune, setTune, resetTune } from '../tune/tuneStore';
+import { getTune, setTune, resetTune, DEFAULT_JAMAAT_OFFSET } from '../tune/tuneStore';
 import { getRamadanTune, setRamadanTune, resetRamadanTune } from '../tune/ramadanTuneStore';
 
+// The 6 real (congregational) daily prayers — Azan Time box.
 const PRAYERS = [
   { key: 'fajr', label: 'Fajr' },
-  { key: 'sunrise', label: 'Sunrise' },
   { key: 'dhuhr', label: 'Johar' },
   { key: 'jummah', label: 'Jummah', sublabel: 'minutes after Johar' },
-  { key: 'ishraq', label: 'Ishraq', sublabel: 'extra minutes after sunrise (~15 min default)' },
-  { key: 'chasht', label: 'Chasht (Duha)', sublabel: 'extra minutes after sunrise (~90 min default)' },
   { key: 'asr', label: 'Asr' },
   { key: 'maghrib', label: 'Maghrib' },
   { key: 'isha', label: 'Ishaa' },
@@ -25,13 +23,28 @@ const PRAYERS = [
 const END_PRAYERS = [
   { key: 'fajrEnd', label: 'Fajr', sublabel: 'minutes after Fajr starts' },
   { key: 'dhuhrEnd', label: 'Johar', sublabel: 'minutes after Johar starts' },
+  { key: 'jummahEnd', label: 'Jummah', sublabel: 'minutes after Jummah starts' },
   { key: 'asrEnd', label: 'Asr', sublabel: 'minutes after Asr starts' },
   { key: 'maghribEnd', label: 'Maghrib', sublabel: 'minutes after Maghrib starts' },
   { key: 'ishaEnd', label: 'Ishaa', sublabel: 'minutes after Ishaa starts' },
 ];
 
-const MIN_OFFSET = -30;
-const MAX_OFFSET = 30;
+// Sunrise, Ishraq and Chasht aren't congregational prayers, so they get
+// their own "Other" box instead of living in the Azan/Jama'at ones —
+// matches MonthPrayerScreen's "Other Start Time" view. Tarabih lives here
+// too — it isn't a Fard congregation, and its offset here adds on top of
+// the fixed 15-minutes-after-Ishaa default (see TARABIH_OFFSET_MINUTES in
+// MonthPrayerScreen.js/prayerPayload.js), same pattern as Ishraq/Chasht's
+// offsets adding on top of their own sunrise-based defaults.
+const OTHER_START = [
+  { key: 'sunrise', label: 'Sunrise' },
+  { key: 'ishraq', label: 'Ishraq', sublabel: 'extra minutes after sunrise (~15 min default)' },
+  { key: 'chasht', label: 'Chasht (Duha)', sublabel: 'extra minutes after sunrise (~90 min default)' },
+  { key: 'tarabih', label: 'Tarabih', sublabel: 'extra minutes after Ishaa (~15 min default)' },
+];
+
+const MIN_OFFSET = -60;
+const MAX_OFFSET = 60;
 // End-time offsets count minutes *after* the prayer's own start, so they
 // can't go negative (that would put the end before the start), and the
 // window can reasonably run up to a few hours.
@@ -144,30 +157,54 @@ export default function TuneTimingsScreen() {
             <Text style={styles.modeButtonChevron}>{dropdownOpen ? '▲' : '▼'}</Text>
           </TouchableOpacity>
 
-          {dropdownOpen && (
-            <View style={styles.dropdown}>
-              {MODE_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.key}
-                  style={styles.dropdownItem}
-                  onPress={() => {
-                    setMode(option.key);
-                    setDropdownOpen(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownItemText,
-                      option.key === mode && styles.dropdownItemTextActive,
-                    ]}
+          {/*
+            The dropdown lives in a transparent Modal rather than inline in
+            the header so that (a) the full-screen backdrop below can catch
+            taps anywhere outside it and close it, and (b) it renders above
+            the ScrollView instead of being clipped by / stacked under it,
+            which absolute positioning inside the header can't guarantee on
+            Android. onRequestClose handles the hardware back button.
+          */}
+          <Modal
+            visible={dropdownOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setDropdownOpen(false)}
+          >
+            <Pressable style={styles.dropdownBackdrop} onPress={() => setDropdownOpen(false)}>
+              {/*
+                Taps inside the menu itself must NOT bubble up to the
+                backdrop, or choosing an option would close the menu via the
+                backdrop before the option's own onPress runs. An empty
+                onPress on this wrapper stops that.
+              */}
+              <Pressable
+                style={[styles.dropdown, { top: insets.top + 44 }]}
+                onPress={() => {}}
+              >
+                {MODE_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setMode(option.key);
+                      setDropdownOpen(false);
+                    }}
                   >
-                    {option.label}
-                  </Text>
-                  {option.key === mode && <Text style={styles.dropdownCheck}>✓</Text>}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+                    <Text
+                      style={[
+                        styles.dropdownItemText,
+                        option.key === mode && styles.dropdownItemTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {option.key === mode && <Text style={styles.dropdownCheck}>✓</Text>}
+                  </TouchableOpacity>
+                ))}
+              </Pressable>
+            </Pressable>
+          </Modal>
         </View>
       </View>
 
@@ -199,7 +236,7 @@ export default function TuneTimingsScreen() {
 
        
         <Text style={styles.subtitle}>
-          By default each prayer's window Jama"at time  matches its own Azan time (0 min) — set minutes here to show how long after it starts the window stays open on the home screen.
+          By default each prayer's Jama'at is 10 minutes after its own Azan time — set minutes here to match your mosque's actual congregation timing.
         </Text>
          <Text style={styles.sectionTitle}>Jama'at Time</Text>
 
@@ -209,10 +246,26 @@ export default function TuneTimingsScreen() {
               key={key}
               label={label}
               sublabel={sublabel}
-              value={activeValues[key] ?? 0}
+              value={activeValues[key] ?? DEFAULT_JAMAAT_OFFSET}
               onChange={(next) => updatePrayer(key, next)}
               min={END_MIN_OFFSET}
               max={END_MAX_OFFSET}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.subtitle}>
+          Sunrise, Ishraq, Chasht and Tarabih aren't congregational prayers — tune when they start here.
+        </Text>
+        <Text style={styles.sectionTitle}>Other Start Time</Text>
+        <View style={styles.card}>
+          {OTHER_START.map(({ key, label, sublabel }) => (
+            <TuneRow
+              key={key}
+              label={label}
+              sublabel={sublabel}
+              value={activeValues[key] ?? 0}
+              onChange={(next) => updatePrayer(key, next)}
             />
           ))}
         </View>
@@ -255,10 +308,16 @@ const styles = StyleSheet.create({
   },
   modeButtonText: { color: colors.navy, fontSize: 13, fontWeight: '700', marginRight: 6 },
   modeButtonChevron: { color: colors.gold, fontSize: 10 },
+  // Fills the whole screen behind the menu so a tap anywhere outside it
+  // closes the dropdown. Left fully transparent so the screen doesn't dim.
+  dropdownBackdrop: {
+    flex: 1,
+  },
   dropdown: {
     position: 'absolute',
-    top: 44,
-    right: 0,
+    // `top` is applied inline (insets.top + 44) since the Modal positions
+    // against the raw screen, safe-area included, not against the header.
+    right: 12,
     backgroundColor: colors.card,
     borderRadius: 12,
     paddingVertical: 6,

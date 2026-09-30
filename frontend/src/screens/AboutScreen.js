@@ -11,7 +11,7 @@ export default function AboutScreen() {
   const navigation = useNavigation();
 
   const handleEmail = () => {
-    Linking.openURL('mailto:salaha2mation@gmail.com?subject=A2salah%20Support');
+    Linking.openURL('mailto:a2mationsolution@gmail.com?subject=A2salah%20Support');
   };
 
   return (
@@ -21,7 +21,7 @@ export default function AboutScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12} style={styles.backButton}>
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>About A2salah</Text>
+        <Text style={styles.headerTitle}>{t('about.headerTitle')}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -41,38 +41,36 @@ export default function AboutScreen() {
         <Text style={styles.version}>Version {APP_VERSION}</Text>
 
         <Text style={styles.paragraph}>
-          A2salah helps you keep up with the five daily prayers — accurate
-          prayer times for your city, adjustable timing offsets, reminders,
-          Qibla direction, and sync with your A2salah prayer-clock device.
+          {t('about.intro')}
         </Text>
 
         <View style={styles.divider} />
 
-        <Text style={styles.sectionTitle}>WHAT YOU GET</Text>
+        <Text style={styles.sectionTitle}>{t('about.whatYouGet')}</Text>
         <View style={styles.featureRow}>
           <Text style={styles.featureIcon}>🕌</Text>
-          <Text style={styles.featureText}>Daily and monthly prayer time charts</Text>
+          <Text style={styles.featureText}>{t('about.featureCharts')}</Text>
         </View>
         <View style={styles.featureRow}>
           <Text style={styles.featureIcon}>🎚️</Text>
-          <Text style={styles.featureText}>Fine-tune timings for your location</Text>
+          <Text style={styles.featureText}>{t('about.featureFineTune')}</Text>
         </View>
         <View style={styles.featureRow}>
           <Text style={styles.featureIcon}>🔔</Text>
-          <Text style={styles.featureText}>Azan reminders with custom sounds</Text>
+          <Text style={styles.featureText}>{t('about.featureReminders')}</Text>
         </View>
         <View style={styles.featureRow}>
           <Text style={styles.featureIcon}>🧭</Text>
-          <Text style={styles.featureText}>Qibla direction from your location</Text>
+          <Text style={styles.featureText}>{t('about.featureQibla')}</Text>
         </View>
         <View style={styles.featureRow}>
           <Text style={styles.featureIcon}>📶</Text>
-          <Text style={styles.featureText}>Sync prayer times to your A2salah device</Text>
+          <Text style={styles.featureText}>{t('about.featureSync')}</Text>
         </View>
 
         <View style={styles.divider} />
 
-        <Text style={styles.sectionTitle}>DEVELOPED BY</Text>
+        <Text style={styles.sectionTitle}>{t('about.developedBy')}</Text>
         <Text style={styles.paragraph}>A2mation</Text>
 
         <TouchableOpacity onPress={handleEmail}>
@@ -80,7 +78,7 @@ export default function AboutScreen() {
         </TouchableOpacity>
 
         <Text style={styles.footerNote}>
-          © {new Date().getFullYear()} A2mation. All rights reserved.
+          {t('about.footerNote', { year: new Date().getFullYear() })}
         </Text>
       </ScrollView>
     </View>

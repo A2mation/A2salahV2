@@ -12,6 +12,7 @@ import ReminderWatcher from './src/notifications/reminderAlerts';
 import { loadTune } from './src/tune/tuneStore';
 import { loadDateTunes, loadYearRoundTimes } from './src/tune/dateTuneStore';
 import { loadRamadanTune } from './src/tune/ramadanTuneStore';
+import { loadLocale } from './src/i18n/localeStore';
 // import { LogBox } from 'react-native';
 //    LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 
@@ -46,6 +47,10 @@ export default function App() {
       setDrawerOpen(value);
     });
     const unsubscribeCity = subscribeCity((newCity) => { if (newCity) setCity(newCity); });
+    // Loads the user's saved language (or detects the device's) before
+    // anything else paints, so the very first screen already renders in
+    // the right language instead of flashing English first.
+    loadLocale();
     // Loads this device's saved per-prayer tune offsets from AsyncStorage
     // before the prayer-times screens' first fetch, so a returning user's
     // own tuning shows up immediately instead of defaulting to 0 until
@@ -72,6 +77,10 @@ export default function App() {
       unsubscribeCity();
     };
   }, []);
+  useEffect(() => {
+  const t = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 2000);
+  return () => clearTimeout(t);
+}, []);
 
   const onRootLayout = useCallback(() => {
     // Root view has mounted and painted at least once — safe to hand off

@@ -14,6 +14,7 @@ import { getTodayPrayerTimes } from '../api/api';
 import { subscribeCoords, subscribeCity, getCity } from '../location/locationStore';
 import { openDrawer } from '../drawer/drawerStore';
 import { getSyncing, subscribeSyncing } from '../sync/syncStatusStore';
+import { useEspConnection } from '../wifi/EspConnectionContext';
 import {
   ClockTabIcon,
   ListTabIcon,
@@ -60,6 +61,11 @@ export default function HomeScreen() {
   // than local state (EspSyncScreen and this bottom nav are siblings).
   const [syncing, setSyncingState] = useState(getSyncing());
   useEffect(() => subscribeSyncing(setSyncingState), []);
+
+  // Drives the Connected/Disconnected badge in the top-right of the
+  // header — reflects EspSyncScreen's live hotspot connection state (see
+  // EspConnectionContext.js) even while a different tab is active.
+  const { espConnected } = useEspConnection();
 
   /* ── Fetch city name for header ─────────────────────────────────── */
   const fetchCity = useCallback(async () => {
@@ -130,6 +136,28 @@ export default function HomeScreen() {
           <View style={[styles.menuLine, syncing && styles.menuLineDisabled]} />
           <View style={[styles.menuLine, syncing && styles.menuLineDisabled]} />
         </TouchableOpacity>
+
+        <View
+          style={[
+            styles.connectionBadge,
+            espConnected ? styles.connectionBadgeConnected : styles.connectionBadgeDisconnected,
+          ]}
+        >
+          <View
+            style={[
+              styles.connectionDot,
+              { backgroundColor: espConnected ? colors.success : colors.danger },
+            ]}
+          />
+          <Text
+            style={[
+              styles.connectionBadgeText,
+              { color: espConnected ? colors.success : colors.danger },
+            ]}
+          >
+            {espConnected ? 'Connected' : 'Disconnected'}
+          </Text>
+        </View>
       </View>
 
       {/* ── City header (clock + list tabs only) ───────────────────── */}
@@ -194,6 +222,7 @@ export default function HomeScreen() {
                 size={28}
                 color={isActive ? colors.iconActive : (syncing ? colors.border : colors.iconInactive)}
               />
+              <View style={[styles.navUnderline, isActive && styles.navUnderlineActive]} />
             </TouchableOpacity>
           );
         })}
@@ -205,9 +234,26 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 8 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
   menuLine: { width: 22, height: 2.5, backgroundColor: colors.navy, marginVertical: 2.5, borderRadius: 2 },
   menuLineDisabled: { backgroundColor: colors.border },
+  connectionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  connectionBadgeConnected: { backgroundColor: colors.successBg },
+  connectionBadgeDisconnected: { backgroundColor: colors.dangerBg },
+  connectionDot: { width: 7, height: 7, borderRadius: 3.5, marginRight: 6 },
+  connectionBadgeText: { fontSize: 12, fontWeight: '700' },
   cityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   pin: { fontSize: 16, marginRight: 6 },
   city: { color: colors.navy, fontSize: 22, fontWeight: '700' },
@@ -225,6 +271,18 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   navItem: { flex: 1, alignItems: 'center', paddingVertical: 4 },
+  // Transparent (not display:none) when inactive so its height is always
+  // reserved — otherwise every icon would shift up/down by 4px depending
+  // on whether its own tab is active, since a hidden element still needs
+  // its layout space held to avoid that jump.
+  navUnderline: {
+    marginTop: 4,
+    width: 18,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: 'transparent',
+  },
+  navUnderlineActive: { backgroundColor: colors.iconActive },
   navIcon: { fontSize: 22, color: colors.iconInactive },
   navIconActive: { color: colors.iconActive },
 });

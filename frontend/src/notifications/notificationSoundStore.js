@@ -7,8 +7,8 @@
 // below and reminderAlerts.js) — so this feature layers on top of Volume
 // rather than requiring the user to pick one before reminders work at all.
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SOUND_LIBRARY } from './notificationSetup';
-import { getCurrentSoundFile } from './volumeStore';
+import { SOUND_LIBRARY, getLibrarySoundFile } from './notificationSetup';
+import { getCurrentSoundFile, getVolumeLevel } from './volumeStore';
 
 const SOUND_CHOICE_KEY = '@a2salah/notification_sound_choice';
 
@@ -59,11 +59,14 @@ export async function setSelectedSound(key) {
 }
 
 // Returns just this store's own file — null if the user hasn't explicitly
-// chosen one of the 15 sounds. Use getEffectiveSoundFile() below for the
-// value that should actually be scheduled/played.
-export function getSelectedSoundFile() {
+// chosen one of the 15 sounds. Combines the choice with the CURRENT volume
+// intensity (or an explicit level, e.g. for previewing a level that hasn't
+// been saved yet) so picking "Sound 7" + "Loud" actually resolves to Sound
+// 7's loud variant, not a single fixed file. Use getEffectiveSoundFile()
+// below for the value that should actually be scheduled/played.
+export function getSelectedSoundFile(level = getVolumeLevel()) {
   const entry = findEntry(selectedKey);
-  return entry ? entry.file : null;
+  return entry ? getLibrarySoundFile(entry, level) : null;
 }
 
 // The single source of truth reminderAlerts.js (and any preview button)

@@ -15,6 +15,8 @@ import {
   buildAllDeviceDayPayloads,
   buildDeviceDateTimePayloadRaw,
   buildDeviceHijriDateTimePayloadRaw,
+  buildDeviceDateTimeCombinedPayloadRaw,
+  buildUpcomingJummahMap,
 } from '../sync/prayerPayload';
 import axios from 'axios';
 import { ESP_HOTSPOT_IP } from './espHotspot';
@@ -26,6 +28,18 @@ const TIMEOUT_MS = 15000;
 // confusing network-layer error.
 function isValidIp(ip) {
   return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip.trim());
+}
+
+const ROW_DELAY_MS = 0;
+ 
+// With ms <= 0 this resolves immediately WITHOUT creating a JS timer.
+// React Native's JS timers are driven by the UI frame loop and can stall
+// while the app is in the background — an `await setTimeout(..., 0)` inside
+// the send loop was enough to freeze the whole year-send the moment the
+// user pressed Home, until the app came back to the foreground.
+function delay(ms) {
+  if (!ms || ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // --- OLD: single-row-per-day senders (Prayer chart, Azan only, 1,1) ---
@@ -100,9 +114,13 @@ export async function sendDayAllRowsOverWifi(ipAddress, day, tune = {}, { onProg
       // eslint-disable-next-line no-await-in-loop -- intentionally sequential
       const response = await axios.get(url, { params: { msg: row }, timeout: TIMEOUT_MS });
       if (onProgress) onProgress({ index: i, total: rows.length, row, success: true, data: response.data });
+      if (i < rows.length - 1) {
+        // eslint-disable-next-line no-await-in-loop -- intentional pacing delay
+        await delay(ROW_DELAY_MS);
+      }
     } catch (err) {
       if (onProgress) onProgress({ index: i, total: rows.length, row, success: false, error: err });
-      const wrapped = new Error(`Failed sending row ${i + 1} of ${rows.length} (${row}): ${err?.response?.data?.message || err.message}`);
+      const wrapped = new Error(`Failed sending row`);
       wrapped.sentCount = i;
       wrapped.failedRow = row;
       throw wrapped;
@@ -135,9 +153,19 @@ export async function sendMonthAllRowsOverWifi(ipAddress, days, tune = {}, { onP
   const totalDays = days.length;
   const rowsPerDay = 4;
 
+  // Computed once for the whole send (not per-day) — every non-Friday day
+  // needs to know its upcoming Friday's Jummah time, and this resolves all
+  // of them in a single pass over `days` rather than one lookup per day.
+  const jummahMap = buildUpcomingJummahMap(days);
+
   for (let d = 0; d < totalDays; d++) {
     const day = days[d];
-    const rows = buildAllDeviceDayPayloads(day, tune);
+    // day.deviceTune (set by EspSyncScreen.prepareYearData) already folds
+    // in this specific date's Jama'at/Tarabih tuning on top of the global
+    // `tune` — falls back to the plain global `tune` for any caller that
+    // doesn't set it (e.g. a bare { date, times } day with no per-date
+    // resolution done upstream).
+    const rows = buildAllDeviceDayPayloads(day, day.deviceTune || tune, jummahMap.get(day.date));
 
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
@@ -157,6 +185,12 @@ export async function sendMonthAllRowsOverWifi(ipAddress, days, tune = {}, { onP
             data: response.data,
           });
         }
+
+           const isLastRow = d === totalDays - 1 && r === rows.length - 1;
+        if (!isLastRow) {
+          // eslint-disable-next-line no-await-in-loop -- intentional pacing delay
+          await delay(ROW_DELAY_MS);
+        }
       } catch (err) {
         if (onProgress) {
           onProgress({
@@ -171,7 +205,7 @@ export async function sendMonthAllRowsOverWifi(ipAddress, days, tune = {}, { onP
           });
         }
         const wrapped = new Error(
-          `Failed sending ${day.date}, row ${r + 1}/${rowsPerDay} (day ${d + 1} of ${totalDays}): ${err?.response?.data?.message || err.message}`
+          `Failed yearData sending`
         );
         wrapped.sentDays = d; // fully-completed days before the failure
         wrapped.sentRowsInFailedDay = r; // rows completed within the failed day
@@ -231,24 +265,18 @@ export async function sendDateTimeOverWifi(ipAddress, hijriToday, { onProgress }
   const url = `http://${ip}/send`;
 
   const now = new Date();
-  const gregorianRow = buildDeviceDateTimePayloadRaw(now);
-  const hijriRow = buildDeviceHijriDateTimePayloadRaw(hijriToday, now);
+    const row = buildDeviceDateTimeCombinedPayloadRaw(hijriToday, now);
 
   try {
-    console.log('[espWifiSync] GET', url, 'msg =', gregorianRow);
-    await axios.get(url, { params: { msg: gregorianRow }, timeout: TIMEOUT_MS });
+    console.log('[espWifiSync] GET', url, 'msg =', row);
+    await axios.get(url, { params: { msg: row }, timeout: TIMEOUT_MS });
     if (onProgress) onProgress(1, 2);
+       await delay(ROW_DELAY_MS);
   } catch (err) {
-    throw new Error(`Failed sending Gregorian date/time (${gregorianRow}): ${err?.response?.data?.message || err.message}`);
+    throw new Error(`Failed sending date/time`);
   }
 
-  try {
-    console.log('[espWifiSync] GET', url, 'msg =', hijriRow);
-    await axios.get(url, { params: { msg: hijriRow }, timeout: TIMEOUT_MS });
-    if (onProgress) onProgress(2, 2);
-  } catch (err) {
-    throw new Error(`Failed sending Hijri date/time (${hijriRow}): ${err?.response?.data?.message || err.message}`);
-  }
+
 
   return { sentAt: now };
 }
@@ -265,7 +293,12 @@ export async function sendDateTimeOverWifi(ipAddress, hijriToday, { onProgress }
 // hijriToday: { day, month, year } for today — e.g. todayData.hijri from
 // api.getTodayPrayerTimes().
 // days/tune/onProgress: same as sendYearAllRowsOverWifi.
+// export async function sendDateTimeAndYearAllRowsOverWifi(ipAddress, hijriToday, days, tune = {}, { onProgress } = {}) {
+//   await sendDateTimeOverWifi(ipAddress, hijriToday);
+//   return sendMonthAllRowsOverWifi(ipAddress, days, tune, { onProgress });
+// }
+
 export async function sendDateTimeAndYearAllRowsOverWifi(ipAddress, hijriToday, days, tune = {}, { onProgress } = {}) {
-  await sendDateTimeOverWifi(ipAddress, hijriToday);
-  return sendMonthAllRowsOverWifi(ipAddress, days, tune, { onProgress });
+  await sendMonthAllRowsOverWifi(ipAddress, days, tune, { onProgress });
+  return  sendDateTimeOverWifi(ipAddress, hijriToday);
 }

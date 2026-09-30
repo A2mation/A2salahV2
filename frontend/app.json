@@ -3,6 +3,7 @@
     "name": "A2salah",
     "slug": "a2salah",
     "version": "1.0.0",
+     "scheme": "a2salah",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -31,7 +32,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "usesCleartextTraffic": true
     },
@@ -79,12 +82,43 @@
             "./assets/sounds/salat_high_12.wav",
             "./assets/sounds/salat_high_13.wav",
             "./assets/sounds/salat_high_14.wav",
-            "./assets/sounds/salat_high_15.wav"
+            "./assets/sounds/salat_high_15.wav",
+            "./assets/sounds/salat_high_1_low.wav",
+            "./assets/sounds/salat_high_1_high.wav",
+            "./assets/sounds/salat_high_2_low.wav",
+            "./assets/sounds/salat_high_2_high.wav",
+            "./assets/sounds/salat_high_3_low.wav",
+            "./assets/sounds/salat_high_3_high.wav",
+            "./assets/sounds/salat_high_4_low.wav",
+            "./assets/sounds/salat_high_4_high.wav",
+            "./assets/sounds/salat_high_5_low.wav",
+            "./assets/sounds/salat_high_5_high.wav",
+            "./assets/sounds/salat_high_6_low.wav",
+            "./assets/sounds/salat_high_6_high.wav",
+            "./assets/sounds/salat_high_7_low.wav",
+            "./assets/sounds/salat_high_7_high.wav",
+            "./assets/sounds/salat_high_8_low.wav",
+            "./assets/sounds/salat_high_8_high.wav",
+            "./assets/sounds/salat_high_9_low.wav",
+            "./assets/sounds/salat_high_9_high.wav",
+            "./assets/sounds/salat_high_10_low.wav",
+            "./assets/sounds/salat_high_10_high.wav",
+            "./assets/sounds/salat_high_11_low.wav",
+            "./assets/sounds/salat_high_11_high.wav",
+            "./assets/sounds/salat_high_12_low.wav",
+            "./assets/sounds/salat_high_12_high.wav",
+            "./assets/sounds/salat_high_13_low.wav",
+            "./assets/sounds/salat_high_13_high.wav",
+            "./assets/sounds/salat_high_14_low.wav",
+            "./assets/sounds/salat_high_14_high.wav",
+            "./assets/sounds/salat_high_15_low.wav",
+            "./assets/sounds/salat_high_15_high.wav"
           ]
         }
       ],
       "munim-bluetooth",
-      "expo-audio"
+      "expo-audio",
+      "./plugins/withBackgroundActionsService"
     ],
     "extra": {
       "eas": {

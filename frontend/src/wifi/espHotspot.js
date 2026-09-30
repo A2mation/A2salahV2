@@ -28,8 +28,9 @@
 //     Configuration" capability/entitlement enabled for this app in your
 //     Apple Developer account before it will work in a real build.
 
-import { Platform, PermissionsAndroid } from 'react-native';
+import { Platform, PermissionsAndroid, Alert } from 'react-native';
 import WifiManager from 'react-native-wifi-reborn';
+
 
 export const ESP_HOTSPOT_SSID = 'A2_SALAH';
 export const ESP_HOTSPOT_PASSWORD = 'A2_ma_tion';
@@ -300,9 +301,12 @@ async function verifyEspReachable() {
         throw new Error('Device did not respond as expected.');
       }
       const body = await response.text();
+     // Optional: show the response for debugging
       console.log('[espHotspot] verifyEspReachable: response body =', body);
       return; // success
     } catch (err) {
+     // Optional: show the error for debugging
+      console.log(`[espHotspot] verifyEspReachable: attempt ${attempt} failed: ${err.message}`);
       clearTimeout(timeoutId);
       lastErr = err;
       console.log(`[espHotspot] verifyEspReachable: attempt ${attempt} FAILED`, {

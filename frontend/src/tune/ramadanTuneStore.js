@@ -20,15 +20,39 @@
 // object comes back in the API response anyway.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_JAMAAT_OFFSET } from './tuneStore';
+
 const RAMADAN_TUNE_KEY = '@a2salah/prayer_ramadan_tune_offsets';
+
+const RAMADAN_TUNE_SCHEMA_VERSION = 2;
 
 // Same key shape as tuneStore's DEFAULT_TUNE (see that file for what each
 // key means) — kept in sync so TuneTimingsScreen's Ramadan mode can reuse
 // the exact same rows/UI as Normal Days mode.
 const DEFAULT_RAMADAN_TUNE = {
   fajr: 0, sunrise: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0, jummah: 0, ishraq: 0, chasht: 0,
-  fajrEnd: 0, dhuhrEnd: 0, asrEnd: 0, maghribEnd: 0, ishaEnd: 0,
+  // Same reasoning as the Jama'at defaults below: shows +15 here too,
+  // matching Normal Days' tarabih default (tuneStore.js's DEFAULT_TUNE),
+  // rather than 0. NOTE: display-only for this tab — the actual Tarabih
+  // time on the chart always reads Normal Days' tune.tarabih (see
+  // MonthPrayerScreen.js), since Ramadan tuning doesn't have a real
+  // 'tarabih' field to apply itself onto.
+  tarabih: 15,
+  // Jama'at offsets default to +10 here too, so the Ramadan tab of
+  // TuneTimingsScreen starts from the same place as Normal Days rather
+  // than showing 0 next to the other tab's 10 (see DEFAULT_JAMAAT_OFFSET
+  // in tuneStore.js, which is the single source of that number).
+  fajrEnd: DEFAULT_JAMAAT_OFFSET,
+  dhuhrEnd: DEFAULT_JAMAAT_OFFSET,
+  asrEnd: DEFAULT_JAMAAT_OFFSET,
+  maghribEnd: DEFAULT_JAMAAT_OFFSET,
+  ishaEnd: DEFAULT_JAMAAT_OFFSET,
+  jummahEnd: DEFAULT_JAMAAT_OFFSET,
 };
+
+
+const JAMAAT_KEYS = ['fajrEnd', 'dhuhrEnd', 'asrEnd', 'maghribEnd', 'ishaEnd', 'jummahEnd'];
+
 
 // sehri/iftar aren't real keys in DEFAULT_RAMADAN_TUNE, but they show up
 // as keys in the `times` object the backend returns (aliases for
@@ -44,7 +68,20 @@ export async function loadRamadanTune() {
   try {
     const stored = await AsyncStorage.getItem(RAMADAN_TUNE_KEY);
     if (stored) {
-      currentRamadanTune = { ...DEFAULT_RAMADAN_TUNE, ...JSON.parse(stored) };
+
+       const parsed = JSON.parse(stored);
+      currentRamadanTune = { ...DEFAULT_RAMADAN_TUNE, ...parsed };
+
+      if (!parsed.schemaVersion && JAMAAT_KEYS.every((key) => !currentRamadanTune[key])) {
+        JAMAAT_KEYS.forEach((key) => { currentRamadanTune[key] = DEFAULT_JAMAAT_OFFSET; });
+      }
+
+        if (!parsed.schemaVersion) {
+        currentRamadanTune.schemaVersion = RAMADAN_TUNE_SCHEMA_VERSION;
+        AsyncStorage.setItem(RAMADAN_TUNE_KEY, JSON.stringify(currentRamadanTune)).catch(() => {});
+      }
+
+
       listeners.forEach((listener) => listener(currentRamadanTune));
     }
   } catch (err) {

@@ -4,24 +4,34 @@ import Svg, { Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { light as colors } from '../theme/colors';
-import { getDateTune, setDateTune, clearDateTune, getAllDateTunes, getAllYearRoundTimes, getYearRoundTime, setYearRoundTime, clearYearRoundTime } from '../tune/dateTuneStore';
-import { getTodayPrayerTimes } from '../api/api';
-import { applyRamadanTuneToTimes } from '../tune/ramadanTuneStore';
-import { getTune } from '../tune/tuneStore';
-
+  import { getDateTune, setDateTune, clearDateTune, getAllDateTunes, getAllYearRoundTimes, getYearRoundTime, setYearRoundTime, clearYearRoundTime } from '../tune/dateTuneStore';
+  import { getYearRawDays } from '../prayer/yearRawStore';
+ import { applyBaseTuneToTimes } from '../prayer/applyTune';
+ import { applyRamadanTuneToTimes } from '../tune/ramadanTuneStore';
+ import { getTune } from '../tune/tuneStore';
 // Same fields/order as the regular "Tune Prayer Timings" screen, minus the
 // End-time offsets — those only affect the home-screen window end, which
-// isn't part of the month chart this feature is meant to mark up.
+// isn't part of the month chart this feature is meant to mark up. Sunrise,
+// Ishraq and Chasht live in their own OTHER_START box below, same split as
+// TuneTimingsScreen's Azan Time / Other Start Time boxes.
 const PRAYERS = [
   { key: 'fajr', label: 'Fajr' },
-  { key: 'sunrise', label: 'Sunrise' },
   { key: 'dhuhr', label: 'Zohar' },
   { key: 'jummah', label: 'Jummah', sublabel: 'Fridays only' },
-  { key: 'ishraq', label: 'Ishraq' },
-  { key: 'chasht', label: 'Chasht (Duha)' },
   { key: 'asr', label: 'Asr' },
   { key: 'maghrib', label: 'Maghrib' },
   { key: 'isha', label: 'Ishaa' },
+];
+
+// Sunrise, Ishraq and Chasht aren't congregational prayers, so — matching
+// TuneTimingsScreen's "Other Start Time" box — they get their own card
+// instead of living in the Azan Time one. Tarabih lives here too, same as
+// TuneTimingsScreen — it isn't a Fard congregation either.
+const OTHER_START = [
+  { key: 'sunrise', label: 'Sunrise' },
+  { key: 'ishraq', label: 'Ishraq' },
+  { key: 'chasht', label: 'Chasht (Duha)' },
+  { key: 'tarabih', label: 'Tarabih' },
 ];
 
 // Same 5 prayers whose window *end* can be tuned as on the regular Tune
@@ -42,8 +52,14 @@ const END_START_KEY = {
   fajrEnd: 'fajr', dhuhrEnd: 'dhuhr', asrEnd: 'asr', maghribEnd: 'maghrib', ishaEnd: 'isha',
 };
 
+// Tarabih has no field of its own in baseTimes — same convention as
+// MonthPrayerScreen.js/prayerPayload.js: it's Isha + tune.tarabih (default
+// 15), computed on the fly rather than returned by the server. Falls back
+// to this default only if tune.tarabih is missing entirely.
+const TARABIH_DEFAULT_MINUTES = 15;
+
 const ZERO_TUNE = {
-  fajr: 0, sunrise: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0, jummah: 0, ishraq: 0, chasht: 0,
+  fajr: 0, sunrise: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0, jummah: 0, ishraq: 0, chasht: 0, tarabih: 0,
   fajrEnd: 0, dhuhrEnd: 0, asrEnd: 0, maghribEnd: 0, ishaEnd: 0,
 };
 
@@ -185,6 +201,28 @@ function TimePickerModal({ visible, label, initialDate, onCancel, onConfirm }) {
     onConfirm(result);
   };
 
+  // Scrolling (fling or slow drag-release) should select the item that
+  // ends up centered, same as tapping a digit does — previously only the
+  // onPress handlers below ever called setHour12/setMinute, so scrolling
+  // to the end of the list and letting go didn't actually change the
+  // selected value until a digit was tapped. snapToInterval means the
+  // list always settles exactly on an item boundary, so the offset maps
+  // straight to an index with a simple round — no fuzzy matching needed.
+  // Both onScrollEndDrag (a slow release with no fling) and
+  // onMomentumScrollEnd (a fling, or the native snap settling) are wired
+  // to this so either way of ending a scroll selects the centered item.
+  const handleHourScrollEnd = (e) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(HOURS_12.length - 1, Math.round(y / ITEM_HEIGHT)));
+    setHour12(HOURS_12[index]);
+  };
+
+  const handleMinuteScrollEnd = (e) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(MINUTES_60.length - 1, Math.round(y / ITEM_HEIGHT)));
+    setMinute(MINUTES_60[index]);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.calModalOverlay}>
@@ -199,6 +237,8 @@ function TimePickerModal({ visible, label, initialDate, onCancel, onConfirm }) {
               showsVerticalScrollIndicator={false}
               snapToInterval={ITEM_HEIGHT}
               decelerationRate="fast"
+              onScrollEndDrag={handleHourScrollEnd}
+              onMomentumScrollEnd={handleHourScrollEnd}
             >
               <View style={{ height: ITEM_HEIGHT }} />
               {HOURS_12.map((h) => (
@@ -226,6 +266,8 @@ function TimePickerModal({ visible, label, initialDate, onCancel, onConfirm }) {
               showsVerticalScrollIndicator={false}
               snapToInterval={ITEM_HEIGHT}
               decelerationRate="fast"
+              onScrollEndDrag={handleMinuteScrollEnd}
+              onMomentumScrollEnd={handleMinuteScrollEnd}
             >
               <View style={{ height: ITEM_HEIGHT }} />
               {MINUTES_60.map((m) => (
@@ -324,26 +366,49 @@ export default function DateTuneScreen() {
   const [pendingAbsolute, setPendingAbsolute] = useState({});
 
   const hasOverride = Object.values(values).some((v) => v) || yearRoundKeys.size > 0;
-
   useEffect(() => {
     let cancelled = false;
     setBaseTimes(null);
-    getTodayPrayerTimes(selectedDateStr)
-      .then(({ data }) => {
+    // Same offline-safe source MonthPrayerScreen already relies on:
+    // getYearRawDays resolves from memory/AsyncStorage on anything but a
+    // genuine cache miss, so this keeps working even on the ESP32 hotspot
+    // (no internet) as long as this year's data was fetched at least once
+    // before connecting — unlike the old getTodayPrayerTimes() call, which
+    // was a live network request every time and silently never resolved
+    // while on the hotspot, leaving this screen stuck on "Loading…"
+    // forever. Raw -> local regular-tune -> local Ramadan-tune, exactly
+    // the same order MonthPrayerScreen's fetchData already applies (regular
+    // tune used to be applied server-side by the old endpoint instead, but
+    // the effect on baseTimes is the same).
+    getYearRawDays(selectedDate.getFullYear())
+      .then((yearDays) => {
         if (cancelled) return;
-        setBaseTimes(applyRamadanTuneToTimes(data?.hijri, data?.times) || {});
+        const dayRaw = yearDays.find((d) => d.date === selectedDateStr);
+        if (!dayRaw) {
+          console.warn('No cached raw prayer times found for', selectedDateStr);
+          return;
+        }
+        const tunedTimes = applyBaseTuneToTimes(dayRaw.times, regularTune);
+        setBaseTimes(applyRamadanTuneToTimes(dayRaw.hijri, tunedTimes) || {});
       })
       .catch((err) => {
-        if (!cancelled) console.warn('Failed to fetch prayer times for date', err.message);
+        if (!cancelled) console.warn('Failed to load cached prayer times for date', err.message);
       });
     return () => { cancelled = true; };
-  }, [selectedDateStr]);
+  }, [selectedDateStr, selectedDate, regularTune]);
 
   // The clock time for `key` before any date-specific override — the azan
-  // time itself for a normal row, or (start time + the regular Jama'at
-  // offset) for an End row.
+  // time itself for a normal row, (start time + the regular Jama'at
+  // offset) for an End row, or (Isha + tune.tarabih) for Tarabih, which —
+  // like the End rows — isn't a field baseTimes returns on its own.
   const getBaseTimeForKey = (key) => {
     if (!baseTimes) return null;
+    if (key === 'tarabih') {
+      const isha = baseTimes.isha;
+      if (!isha) return null;
+      const offset = regularTune?.tarabih ?? TARABIH_DEFAULT_MINUTES;
+      return new Date(new Date(isha).getTime() + offset * 60000);
+    }
     const startKey = END_START_KEY[key];
     if (startKey) {
       const start = baseTimes[startKey];
@@ -413,7 +478,7 @@ export default function DateTuneScreen() {
 
   // Human-readable name for a prayer key, for use in the confirmation
   // dialog — reuses the same labels shown on the rows themselves.
-  const labelForKey = (key) => [...PRAYERS, ...END_PRAYERS].find((p) => p.key === key)?.label || key;
+  const labelForKey = (key) => [...PRAYERS, ...OTHER_START, ...END_PRAYERS].find((p) => p.key === key)?.label || key;
 
   const commitSave = () => {
     const dateOverrides = { ...values };
@@ -515,7 +580,7 @@ export default function DateTuneScreen() {
 
   // Everything the time-picker popup needs about whichever row is open.
   const activePrayer = timePickerFor
-    ? [...PRAYERS, ...END_PRAYERS].find((p) => p.key === timePickerFor)
+    ? [...PRAYERS, ...OTHER_START, ...END_PRAYERS].find((p) => p.key === timePickerFor)
     : null;
 
   const closeTimePicker = () => setTimePickerFor(null);
@@ -603,6 +668,22 @@ export default function DateTuneScreen() {
         <Text style={styles.sectionTitle}>Jama'at Time</Text>
         <View style={styles.card}>
           {END_PRAYERS.map(({ key, label, sublabel }) => (
+            <ClockRow
+              key={key}
+              label={label}
+              sublabel={sublabel}
+              time={getEffectiveTimeForKey(key)}
+              hasOverride={!!values[key] || yearRoundKeys.has(key)}
+              onPress={() => { if (baseTimes) setTimePickerFor(key); }}
+              yearRound={yearRoundKeys.has(key)}
+              onToggleYearRound={() => toggleYearRound(key)}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>Other Start Time</Text>
+        <View style={styles.card}>
+          {OTHER_START.map(({ key, label, sublabel }) => (
             <ClockRow
               key={key}
               label={label}

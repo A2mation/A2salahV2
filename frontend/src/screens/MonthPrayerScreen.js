@@ -20,8 +20,7 @@ import {
   getAllDateTunes, subscribeDateTunes, applyDateTuneToTimes, MIRROR_KEYS,
   getAllYearRoundTimes, subscribeYearRoundTimes, applyYearRoundTimesToTimes,
 } from '../tune/dateTuneStore';
-import { applyRamadanTuneToTimes, subscribeRamadanTune } from '../tune/ramadanTuneStore';
-
+import { applyRamadanTuneToTimes, isRamadanHijri, subscribeRamadanTune } from '../tune/ramadanTuneStore';
 // Short column headers for the timetable (kept narrow so all 6 fit on one row).
 const PRAYER_COLUMNS = [
   { key: 'fajr', label: 'Fajr' },
@@ -34,22 +33,37 @@ const PRAYER_COLUMNS = [
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-// "Other" view — Ramadan-facing timings, served by the same /times object
-// (sehri === fajr, iftar === maghrib, zawal === solar noon).
+// "Other Start Time" view — Ramadan-facing timings, served by the same
+// /times object (sehri === fajr, iftar === maghrib, zawal === solar noon).
+// Tarabih is just Isha + 15 min, computed for display only — see
+// TARABIH_DEFAULT_MINUTES below.
 const OTHER_COLUMNS = [
   { key: 'sehri', label: 'Sehri' },
-   { key: 'sunrise', label: 'Sunrise' },
-    { key: 'ishraq', label: 'Ishraq' },
-     { key: 'chasht', label: 'Chasht' },
+  { key: 'tarabih', label: 'Tarabih' },
+  { key: 'ishraq', label: 'Ishraq' },
+  { key: 'chasht', label: 'Chasht' },
+  { key: 'zawal', label: 'Zawal' },
+  { key: 'iftar', label: 'Iftar' },
+];
+
+// "Other End Time" view — same row, but Sunrise takes the slot Tarabih
+// occupies on the Start chart (Sunrise has no Jama'at/start-end pair of
+// its own, so it only ever needed one column — it's just been moved here).
+const OTHER_JAMAAT_COLUMNS = [
+  { key: 'sehri', label: 'Sehri' },
+  { key: 'sunrise', label: 'Sunrise' },
+  { key: 'ishraq', label: 'Ishraq' },
+  { key: 'chasht', label: 'Chasht' },
   { key: 'zawal', label: 'Zawal' },
   { key: 'iftar', label: 'Iftar' },
 ];
 
 // The dropdown next to the month nav switches which column set is shown.
-// "prayers"/"jamaat" both use PRAYER_COLUMNS, "other"/"otherJamaat" both
-// use OTHER_COLUMNS — same 4-combination shape as the ESP32 sync payload
-// (buildAllDeviceDayPayloads: chart x azan/jamaat). Only the time shown
-// per cell differs between the Azan and Jama'at variant of each chart.
+// "prayers"/"jamaat" both use PRAYER_COLUMNS; "other" uses OTHER_COLUMNS
+// and "otherJamaat" uses OTHER_JAMAAT_COLUMNS — same 4-combination shape
+// as the ESP32 sync payload (buildAllDeviceDayPayloads: chart x
+// azan/jamaat), except the "Other" pair's columns aren't identical:
+// Tarabih only exists on the Start chart, Sunrise only on the End chart.
 const VIEW_OPTIONS = [
   { key: 'prayers', label: 'Prayer Azan' },
   { key: 'jamaat', label: 'Prayer Jamaat' },
@@ -70,18 +84,25 @@ const JAMAAT_OFFSET_KEYS = {
   isha: 'ishaEnd',
 };
 
-// The "Other" chart's 6 fields aren't prayers themselves, so they don't
-// have their own tune offsets — each one mirrors whichever prayer it's
-// tied to, same convention as buildDeviceDayPayloadRaw in
-// sync/prayerPayload.js ("Sehri follows Fajr's offset, Zawal follows
-// Dhuhr's, Iftar follows Maghrib's"). Sunrise/Ishraq/Chasht have no
-// congregation concept, so they're left out — their Jama'at time is just
-// their Azan time (no offset applied).
+// The "Other" charts' fields aren't prayers themselves, so they don't have
+// their own tune offsets — each one mirrors whichever prayer it's tied to,
+// same convention as buildDeviceDayPayloadRaw in sync/prayerPayload.js
+// ("Sehri follows Fajr's offset, Zawal follows Dhuhr's, Iftar follows
+// Maghrib's"). Sunrise/Ishraq/Chasht have no congregation concept, so
+// they're left out — their Jama'at/End time is just their Start time (no
+// offset applied). Tarabih only appears on the Start chart, so it has no
+// End-side offset key either.
 const OTHER_JAMAAT_OFFSET_KEYS = {
   sehri: 'fajrEnd',
   zawal: 'dhuhrEnd',
   iftar: 'maghribEnd',
 };
+
+// Tarabih has no field of its own anywhere in the backend or the year
+// cache — it's just Isha + tune.tarabih, whose default (15) lives in
+// tuneStore's DEFAULT_TUNE. Falls back to that same 15 here only for the
+// (should-never-happen) case tune.tarabih is missing entirely.
+const TARABIH_DEFAULT_MINUTES = 15;
 
 // Adds a per-prayer Jama'at offset (minutes) on top of an Azan time. No-op
 // when either input is missing/zero, so untuned prayers (and Jummah, which
@@ -109,10 +130,16 @@ const columnFlex = (key) => (key === 'dhuhr' || key === 'jummah' ? 1.3 : 1);
 // dateTuneStore itself does, so the "Other" view's Sehri/Iftar cells light
 // up correctly whenever the user tuned Fajr/Maghrib. Only this cell's own
 // time text should turn blue; the rest of that day's row stays untouched.
-function isCellModified(dateOverride, yearRoundEntry, columnKey) {
+// jamaatOffsetKey: on a Jama'at/End view, the column's OWN offset field
+// (fajrEnd, tarabih, etc.) — checked in ADDITION to columnKey, since tuning
+// only the Jama'at time for a date (leaving the Azan time alone) still
+// needs to light up that cell. Pass null/undefined outside Jama'at views.
+function isCellModified(dateOverride, yearRoundEntry, columnKey, jamaatOffsetKey) {
   const offsetKey = MIRROR_KEYS[columnKey] || columnKey;
-  const dateModified = !!dateOverride && !!dateOverride[offsetKey];
-  const yearRoundModified = !!yearRoundEntry && !!yearRoundEntry[offsetKey];
+  const dateModified = (!!dateOverride && !!dateOverride[offsetKey])
+    || (!!jamaatOffsetKey && !!dateOverride && !!dateOverride[jamaatOffsetKey]);
+  const yearRoundModified = (!!yearRoundEntry && !!yearRoundEntry[offsetKey])
+    || (!!jamaatOffsetKey && !!yearRoundEntry && !!yearRoundEntry[jamaatOffsetKey]);
   return dateModified || yearRoundModified;
 }
 
@@ -164,7 +191,11 @@ export default function MonthPrayerScreen() {
   // immediately without a re-fetch.
   const [yearRoundTimes, setYearRoundTimes] = useState(getAllYearRoundTimes());
 
-  const activeColumns = (viewMode === 'other' || viewMode === 'otherJamaat') ? OTHER_COLUMNS : PRAYER_COLUMNS;
+  const activeColumns = viewMode === 'other'
+    ? OTHER_COLUMNS
+    : viewMode === 'otherJamaat'
+    ? OTHER_JAMAAT_COLUMNS
+    : PRAYER_COLUMNS;
   const activeViewLabel = VIEW_OPTIONS.find((v) => v.key === viewMode)?.label || 'Prayer Azan';
 
   useEffect(() => {
@@ -507,7 +538,7 @@ export default function MonthPrayerScreen() {
             return (
               <View
                 key={dayEntry.date}
-                style={[styles.row, dayEntry.isToday && styles.todayRow]}
+                style={[styles.row, dayEntry.isToday && styles.todayRow, isModified && styles.modifiedRow]}
               >
                 <View style={styles.dateRowCell}>
                   <Text style={[styles.dayNum, dayEntry.isToday && styles.activeText]}>
@@ -519,8 +550,32 @@ export default function MonthPrayerScreen() {
                   {isModified && <View style={styles.modifiedDot} />}
                 </View>
                 {activeColumns.map((col, index) => {
+                  // Tarabih isn't a real field — it's Isha + tune.tarabih
+                  // (default 15, tunable in Tune Prayer Timings) — same
+                  // priority order as every other derived time: a
+                  // year-round fixed Tarabih time for this year wins
+                  // outright; otherwise the regular tune offset plus
+                  // whatever extra offset this specific date was tuned
+                  // with (dateOverride.tarabih, from "Tune a Date") stack
+                  // on top of Isha. Previously this only ever used the
+                  // regular tune offset, so tuning Tarabih for one date
+                  // never showed up here even though it saved correctly.
+                  const tarabihYearFixed = yearRoundEntry?.tarabih;
+                  const tarabihValue = (() => {
+                    if (!effectiveTimes?.isha) return null;
+                      if (!isRamadanHijri(dayEntry.hijri)) return null;
+                    if (tarabihYearFixed) {
+                      const d = new Date(effectiveTimes.isha);
+                      d.setHours(tarabihYearFixed.hour, tarabihYearFixed.minute, 0, 0);
+                      return d;
+                    }
+                    const dateOffset = (isModified && dateOverride?.tarabih) || 0;
+                    return applyJamaatOffset(effectiveTimes.isha, (tune.tarabih ?? TARABIH_DEFAULT_MINUTES) + dateOffset);
+                  })();
                   const rawCellValue = col.key === 'jummah'
                     ? (dayEntry.weekday === 'Friday' ? effectiveTimes?.jummah : null)
+                    : col.key === 'tarabih'
+                    ? tarabihValue
                     : effectiveTimes?.[col.key];
                   // Jama'at charts: same underlying (already-tuned) Azan
                   // time as their Azan counterpart, plus this column's
@@ -533,13 +588,53 @@ export default function MonthPrayerScreen() {
                   const offsetKey = viewMode === 'otherJamaat'
                     ? OTHER_JAMAAT_OFFSET_KEYS[col.key]
                     : JAMAAT_OFFSET_KEYS[col.key];
-                  const cellValue = isJamaatView
-                    ? applyJamaatOffset(rawCellValue, tune[offsetKey])
+                  // Ishraq/Chasht still have no Jama'at concept — on the
+                  // "Other End Time" view specifically, they must never
+                  // show a real time at all (not their echoed Start time,
+                  // and not a literal "0:00" either). Forcing cellValue to
+                  // null here makes formatTime render the exact same
+                  // "--:--" placeholder Jummah already shows on a
+                  // non-Friday date (see rawCellValue above) — same
+                  // convention, not a separate one. NOTE: this only
+                  // changes what's shown on screen — the WiFi payload
+                  // (prayerPayload.js) still sends a literal 0000 for
+                  // these fields on the End row, unrelated to this
+                  // display placeholder. Sunrise is no longer in this
+                  // list: it now lives only on the End chart, where it
+                  // should show its real time (no offset key exists for
+                  // it, so applyJamaatOffset below is a no-op and it just
+                  // echoes its own time, same as before when it sat on
+                  // the Start chart).
+                  const isFixedZeroEndCol =
+                    viewMode === 'otherJamaat' &&
+                    (col.key === 'ishraq' || col.key === 'chasht');
+                  // A Jama'at/End cell's own offset key (fajrEnd, dhuhrEnd,
+                  // etc.) can ALSO have been tuned for this one date, via
+                  // the "Jama'at Time" box on "Tune a Date" — separately
+                  // from that date's Azan-time override, if any. Same
+                  // year-round-wins, then-stack-the-date-offset priority as
+                  // Tarabih above. Previously this stacking never happened:
+                  // the Jama'at column always used only the regular tune
+                  // offset, so a date-specific Jama'at-time edit saved to
+                  // storage but never actually showed up here.
+                  const jamaatYearFixed = offsetKey ? yearRoundEntry?.[offsetKey] : null;
+                  const jamaatDateOffset = (offsetKey && isModified && dateOverride?.[offsetKey]) || 0;
+                  const cellValue = isFixedZeroEndCol
+                    ? null
+                    : isJamaatView
+                    ? (jamaatYearFixed
+                        ? (() => {
+                            if (!rawCellValue) return null;
+                            const d = new Date(rawCellValue);
+                            d.setHours(jamaatYearFixed.hour, jamaatYearFixed.minute, 0, 0);
+                            return d;
+                          })()
+                        : applyJamaatOffset(rawCellValue, (tune[offsetKey] || 0) + jamaatDateOffset))
                     : rawCellValue;
                   // Per-column, not per-row: only the prayer the user
                   // actually tuned for this date lights up blue — the rest
                   // of the row keeps its normal (or today-gold) color.
-                  const cellModified = isCellModified(dateOverride, yearRoundEntry, col.key);
+                  const cellModified = isCellModified(dateOverride, yearRoundEntry, col.key, isJamaatView ? offsetKey : null);
                   if (dayEntry.date === '2026-08-10' && col.key === 'dhuhr') {
                     console.log('[MonthPrayer] 2026-08-10 dhuhr column — dateOverride:', dateOverride, 'yearRoundEntry:', yearRoundEntry, 'cellModified:', cellModified, 'displayed cellValue:', cellValue);
                   }
@@ -687,6 +782,31 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   todayRow: { backgroundColor: `${colors.gold}1A` },
+  // A row with any tuned time (per-date offset or a year-round fixed
+  // time covering it) gets a blue border all around, on top of whatever
+  // else is going on (today's gold background, etc.) — everything else
+  // about the row (colors, the modified dot, per-cell blue text) stays
+  // exactly as it was. borderBottomWidth/borderBottomColor are repeated
+  // here because `row` above already sets its own borderBottomWidth (1)
+  // and borderBottomColor (colors.border) — being more specific than the
+  // general borderWidth/borderColor, those would otherwise win for just
+  // the bottom edge, leaving it thin and gray while the other 3 sides
+  // came out thicker and blue. cardBottom (this row's parent) has
+  // paddingHorizontal: 16, and the row itself has no horizontal padding of
+  // its own — so left/right are pushed in only by that parent padding.
+  // marginHorizontal cancels that padding out so the border reaches the
+  // card's true left/right edges instead of stopping 16px short, and
+  // paddingHorizontal puts the same 16px back as the row's OWN padding so
+  // the date/time cells inside land in exactly the same spot as an
+  // unmodified row.
+  modifiedRow: {
+    borderWidth: 2,
+    borderColor: colors.modified,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.modified,
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+  },
   // Only the time text recolors for a modified date (not the whole row) —
   // see modifiedText/modifiedDot below.
   modifiedText: { color: colors.modified, fontWeight: '700' },

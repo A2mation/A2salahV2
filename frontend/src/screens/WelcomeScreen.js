@@ -1,16 +1,17 @@
-
 import React, { useEffect } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
 import { markOnboardingComplete } from '../onboarding/onboardingStore';
+import useTranslation from '../i18n/Usetranslation.js';
  
 // How long Welcome lingers on repeat launches before auto-continuing to
 // Home, since there's no "Get Started" button to tap after the first time.
 const AUTO_CONTINUE_MS = 6000;
  
 export default function WelcomeScreen({ navigation, route }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const isFirstLaunch = route?.params?.isFirstLaunch ?? true;
  
@@ -49,11 +50,11 @@ export default function WelcomeScreen({ navigation, route }) {
           <View style={styles.iconBox}>
             <Image source={require('../../assets/CompanyLogoIcon.png')} style={styles.iconImage} resizeMode="contain" />
           </View>
-          <Text style={styles.presentedBy}>POWERED BY</Text>
+          <Text style={styles.presentedBy}>{t('welcome.poweredBy')}</Text>
           <Text style={styles.brand}>A2mation</Text>
           <View style={styles.divider} />
           <Text style={styles.description}>
-            Innovating with purpose. We are thrilled to accompany you on your spiritual journey.
+            {t('welcome.description')}
           </Text>
           <Text style={styles.companyName}>A2mation  Technology Solution(OPC) Pvt Ltd</Text>
           <Text style={styles.contactInfo}>+91 8777353002</Text>
@@ -62,7 +63,7 @@ export default function WelcomeScreen({ navigation, route }) {
 
         {isFirstLaunch && (
           <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
-            <Text style={styles.buttonText}>Get Started →</Text>
+            <Text style={styles.buttonText}>{t('welcome.getStarted')}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,10 +15,9 @@ import Svg, { Line, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { light as colors } from '../theme/colors';
-import * as reminderApi from '../api/api';
-import { CHANNEL_ID, ensurePermission, ensureChannel } from '../notifications/notificationSetup';
-import { getCurrentSoundFile } from '../notifications/volumeStore';
-
+import * as reminderStore from '../notifications/remindersStore';
+import { ensurePermission, ensureChannel, getChannelId } from '../notifications/notificationSetup';
+import { getEffectiveSoundFile } from '../notifications/notificationSoundStore';
 const PRAYER_OPTIONS = [
   { key: 'fajr', label: 'Fajr' },
   { key: 'sunrise', label: 'Sunrise' },
@@ -89,20 +88,16 @@ export default function RemindersScreen() {
   const [offsetMinutes, setOffsetMinutes] = useState(10);
   const [saving, setSaving] = useState(false);
 
-  const fetchReminders = useCallback(async () => {
-    try {
-      const { data } = await reminderApi.getReminders();
-      setReminders(data);
-    } catch (err) {
-      console.warn('Failed to fetch reminders', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Reminders live on-device (AsyncStorage) — no network. The store pushes
+  // every change to us, so the list stays in sync without manual refetches.
   useEffect(() => {
-    fetchReminders();
-  }, [fetchReminders]);
+    const unsubscribe = reminderStore.subscribeReminders(setReminders);
+    reminderStore.loadReminders().then((data) => {
+      setReminders(data);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
 
   const openAddModal = () => {
     setLabel(LABEL_PRESETS[0]);
@@ -114,23 +109,21 @@ export default function RemindersScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await reminderApi.createReminder({ label, prayer, offsetMinutes });
+      if (!label.trim()) {
+        Alert.alert('Name required', 'Please enter a reminder name.');
+        return;
+      }
+      await reminderStore.addReminder({ label, prayer, offsetMinutes });
       setModalVisible(false);
-      fetchReminders();
     } catch (err) {
-      Alert.alert('Could not save reminder', err?.response?.data?.message || 'Something went wrong');
+      Alert.alert('Could not save reminder', 'Something went wrong');
     } finally {
       setSaving(false);
     }
   };
 
   const handleToggle = async (item) => {
-    setReminders((prev) => prev.map((r) => (r._id === item._id ? { ...r, enabled: !r.enabled } : r)));
-    try {
-      await reminderApi.updateReminder(item._id, { enabled: !item.enabled });
-    } catch (err) {
-      fetchReminders();
-    }
+    await reminderStore.updateReminder(item._id, { enabled: !item.enabled });
   };
 
   const handleDelete = (item) => {
@@ -141,8 +134,7 @@ export default function RemindersScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await reminderApi.deleteReminder(item._id);
-            fetchReminders();
+            await reminderStore.deleteReminder(item._id);
           } catch (err) {
             Alert.alert('Error', 'Could not delete reminder');
           }
@@ -162,22 +154,22 @@ export default function RemindersScreen() {
       Alert.alert('Permission needed', 'Enable notifications for this app in system settings, then try again.');
       return;
     }
-    const soundFile = getCurrentSoundFile();
-    await ensureChannel(soundFile);
+const soundFile = getEffectiveSoundFile();
+await ensureChannel(soundFile);
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Test reminder',
         body: 'If you hear this after closing the app, notifications are working.',
         sound: soundFile,
       },
-      trigger: {
+        trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: 10,
         // channelId belongs on the trigger, not content (see reminderAlerts.js) —
-        // Android silently drops it from content, so the notification falls back
-        // to the default channel/sound instead of the "reminders" channel's
-        // custom notification sound.
-        ...(CHANNEL_ID ? { channelId: CHANNEL_ID } : {}),
+        // and must be the sound-specific id ensureChannel() just (re)created
+        // above, not a static 'reminders' id, or Android plays whatever
+        // sound got cached against that id the first time it existed.
+        channelId: getChannelId(soundFile),
       },
     });
     Alert.alert('Test scheduled', 'Firing in 10 seconds — close or lock the app now.');
@@ -193,8 +185,7 @@ export default function RemindersScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await reminderApi.deleteAllReminders();
-            fetchReminders();
+            await reminderStore.deleteAllReminders();
           } catch (err) {
             Alert.alert('Error', 'Could not delete reminders');
           }

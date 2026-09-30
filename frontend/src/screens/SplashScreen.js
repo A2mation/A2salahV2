@@ -3,7 +3,8 @@ import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
-import { getTodayPrayerTimes } from '../api/api';
+import { getTodayPrayerTimesCached } from '../prayer/todayPrayerCache';
+import { getTodayFromYearRaw } from '../prayer/todayFromYear';
 import { getLocationReady, subscribeLocationReady } from '../location/locationStore';
 import { setPrayerData } from '../prayer/prayerTimesStore';
 import { hasCompletedOnboarding } from '../onboarding/onboardingStore';
@@ -69,7 +70,16 @@ export default function SplashScreen({ navigation }) {
       // (Render free tier) wakes up from a cold start.
       setMessage('Fetching prayer times...');
       try {
-        const { data } = await getTodayPrayerTimes();
+        // Try to build today's times from the already-cached full-year
+        // data first — this is a pure AsyncStorage read on every day after
+        // the year's first fetch, so a new calendar day no longer means a
+        // guaranteed hit on the (slow, cold-starting) backend. Only fall
+        // back to the network call if that cache genuinely has nothing for
+        // this (year, location) yet.
+        let data = await getTodayFromYearRaw();
+        if (!data) {
+          data = await getTodayPrayerTimesCached();
+        }
         if (!cancelled) setPrayerData(data);
       } catch (err) {
         console.warn('Splash prefetch failed:', err.message);

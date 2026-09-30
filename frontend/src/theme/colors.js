@@ -13,17 +13,18 @@ export default {
 
 // Light/cream theme used on the Home screen (matches the prayer-times list reference design).
 export const light = {
-  background: '#F4EFE6',
-  card: '#FBF8F2',
+  background: '#EBDCC0',
+  card: '#F6EDDA',
   navy: '#09142b',
   gold: '#C9952F',
   goldMuted: '#C9952F99',
   textMuted: '#8B8B8B',
-  border: '#E8E1D4',
+  border: '#DCC9A0',
   white: '#FFFFFF',
   navBar: '#FFFFFF',
   iconInactive: '#B9B9B9',
-  iconActive: '#3B82C9',
+  // iconActive: '#3B82C9',
+  iconActive: '#0c0303',
   // Distinct from `gold` (used for "today") — marks a date that has its
   // own custom "Tune a Date" override, in the month chart and elsewhere.
   modified: '#3B82C9',
@@ -32,4 +33,8 @@ export const light = {
   // connection dot on EspSyncScreen).
   success: '#2E9E5B',
   successBg: '#2E9E5B1A',
+  // Used for "disconnected" status indicators (e.g. the header connect/
+  // disconnect badge on HomeScreen).
+  danger: '#D6453F',
+  dangerBg: '#D6453F1A',
 };

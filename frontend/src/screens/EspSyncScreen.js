@@ -6,11 +6,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
+  AppState,
 } from 'react-native';
+import BackgroundService from 'react-native-background-actions';
+import * as Notifications from 'expo-notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { subscribeCoords } from '../location/locationStore';
 import { light as colors } from '../theme/colors';
-import * as reminderApi from '../api/api';
 import { sendDateTimeAndYearAllRowsOverWifi, sendDateTimeOverWifi } from '../wifi/espWifiSync';
 import {
   ESP_HOTSPOT_SSID,
@@ -21,9 +24,14 @@ import {
   pingEspHotspot,
 } from '../wifi/espHotspot';
 import { getTune } from '../tune/tuneStore';
-import { applyDateTuneToTimes, applyYearRoundTimesToTimes } from '../tune/dateTuneStore';
+import { getYearRawDays } from '../prayer/yearRawStore';
+import { getTodayFromYearRaw } from '../prayer/todayFromYear';
+import { applyBaseTuneToTimes } from '../prayer/applyTune';
+import { applyDateTuneToTimes, applyYearRoundTimesToTimes, getDateTune, getYearRoundTime } from '../tune/dateTuneStore';
 import { applyRamadanTuneToTimes } from '../tune/ramadanTuneStore';
 import { setSyncing } from '../sync/syncStatusStore';
+import { useEspConnection } from '../wifi/EspConnectionContext';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 // Turns raw {index, total} from the onProgress callbacks in espWifiSync.js
 // into a clamped 0-100 whole number. Those callbacks only advance once the
@@ -34,8 +42,72 @@ function calcPercent(index, total) {
   return Math.max(0, Math.min(100, Math.round((index / total) * 100)));
 }
 
+// Same convention as prayerPayload.js/MonthPrayerScreen.js: Tarabih has no
+// field of its own — it's Isha + tune.tarabih — and falls back to 15 if
+// tune.tarabih is missing entirely.
+const TARABIH_DEFAULT_MINUTES = 15;
+
+// Which base Azan prayer each Jama'at ("*End") field is measured from —
+// mirrors END_START_KEY in DateTuneScreen.js.
+const END_BASE_KEY = {
+  fajrEnd: 'fajr', dhuhrEnd: 'dhuhr', asrEnd: 'asr', maghribEnd: 'maghrib', ishaEnd: 'isha',
+};
+
+// buildAllDeviceDayPayloads (prayerPayload.js) computes every Jama'at/End
+// field and Tarabih purely from the ONE global `tune` object it's handed —
+// it has no idea "Tune a Date" or a year-round fixed time even exist. That
+// was fine as long as those fields could only ever be tuned globally, but
+// DateTuneScreen's "Jama'at Time" box and Tarabih row let the user tune
+// them per-date too — and MonthPrayerScreen's chart already honors that
+// (see its jamaatYearFixed/jamaatDateOffset logic). This resolves the same
+// three-way priority (year-round fixed time wins outright, else the global
+// tune offset plus this date's extra offset stack on top) into a single
+// per-day tune-shaped object, so the SAME numbers the chart shows are what
+// actually gets sent to the device — previously the device always got only
+// the global offset, silently ignoring any per-date Jama'at/Tarabih tuning
+// even though the chart displayed it correctly.
+// effectiveTimes: this day's times AFTER Ramadan + year-round + date-tune
+// have already been applied to the base Azan fields (see prepareYearData
+// below) — i.e. exactly what MonthPrayerScreen calls effectiveTimes/
+// rawCellValue for this day.
+function computeDeviceTuneForDay(dateStr, effectiveTimes, tune) {
+  const year = dateStr.slice(0, 4);
+  const dateOverride = getDateTune(dateStr);
+  const dayTune = { ...tune };
+
+  // toEquivalentOffset: a year-round fixed clock time (hour/minute) has no
+  // "offset" of its own — it's an exact answer, not a nudge. To reuse
+  // prayerPayload.js's existing applyJamaatOffset(raw, minutes) unchanged,
+  // convert it to whatever per-day offset (in minutes) would land exactly
+  // on that fixed time, given this day's own base time.
+  const toEquivalentOffset = (baseTime, fixed) => {
+    if (!baseTime || !fixed) return null;
+    const base = new Date(baseTime);
+    const baseMinutes = base.getHours() * 60 + base.getMinutes();
+    const fixedMinutes = fixed.hour * 60 + fixed.minute;
+    return fixedMinutes - baseMinutes;
+  };
+
+  Object.entries(END_BASE_KEY).forEach(([endKey, baseKey]) => {
+    const fixed = getYearRoundTime(year, endKey);
+    const equivalent = toEquivalentOffset(effectiveTimes?.[baseKey], fixed);
+    dayTune[endKey] = equivalent !== null
+      ? equivalent
+      : (tune[endKey] || 0) + (dateOverride?.[endKey] || 0);
+  });
+
+  const tarabihFixed = getYearRoundTime(year, 'tarabih');
+  const tarabihEquivalent = toEquivalentOffset(effectiveTimes?.isha, tarabihFixed);
+  dayTune.tarabih = tarabihEquivalent !== null
+    ? tarabihEquivalent
+    : (tune.tarabih ?? TARABIH_DEFAULT_MINUTES) + (dateOverride?.tarabih || 0);
+
+  return dayTune;
+}
+
 export default function EspSyncScreen() {
   const insets = useSafeAreaInsets();
+  const { setEspConnected } = useEspConnection();
 
   // --- WiFi (hotspot) state ---
   // The app always connects to the same fixed SSID/password
@@ -95,6 +167,7 @@ export default function EspSyncScreen() {
   // so a still-pending revert can be cancelled if a fresh send starts.
   const DONE_DISPLAY_MS = 10000;
   const wifiDoneTimerRef = React.useRef(null);
+  const sendErrorRef = React.useRef(null);
   const timeDoneTimerRef = React.useRef(null);
 
   useEffect(() => {
@@ -121,11 +194,17 @@ export default function EspSyncScreen() {
   const [preparingYearData, setPreparingYearData] = useState(false);
   const [yearDataError, setYearDataError] = useState(null);
 
+  // Today's date/Hijri info now comes out of the SAME cached year data
+  // (memory -> AsyncStorage, see prayer/yearRawStore.js) instead of a
+  // separate /prayer/today API call. The backend is only contacted on a
+  // genuine cache miss (first ever load, new year, or a real location
+  // change) — and never on a normal open of this screen.
   const prepareTodayData = useCallback(async () => {
     setPreparingTodayData(true);
     setTodayDataError(null);
     try {
-      const { data } = await reminderApi.getTodayPrayerTimes();
+      const data = await getTodayFromYearRaw();
+      if (!data) throw new Error("Today's date was not found in the saved prayer times.");
       setTodayData(data);
     } catch (err) {
       setTodayData(null);
@@ -135,25 +214,19 @@ export default function EspSyncScreen() {
     }
   }, []);
 
+  // Caches only the RAW (untuned) year — fetched/cached once while the phone
+  // still has internet. Every tune (global, Ramadan, year-round, per-date) is
+  // applied later, at SEND time, by buildEffectiveDays() below. This is what
+  // lets the user change tuning AFTER connecting to the device (when the
+  // hotspot has no internet and nothing can be re-fetched) and still have
+  // the device receive the new chart.
   const prepareYearData = useCallback(async () => {
     setPreparingYearData(true);
     setYearDataError(null);
     try {
       const now = new Date();
-      const days = await reminderApi.getYearPrayerTimes(now.getFullYear());
-      // Replicate MonthPrayerScreen's exact display pipeline so the ESP32
-      // gets what the chart actually shows, not just the raw backend times:
-      // Ramadan tune first (no-op outside Ramadan), then year-round exact
-      // time overwrites that key's clock time, then a date-specific tune
-      // adds its offset on top of whatever's left.
-      const effectiveDays = days.map((day) => {
-        const ramadanTimes = applyRamadanTuneToTimes(day.hijri, day.times);
-        const yearRoundApplied = applyYearRoundTimesToTimes(day.date, ramadanTimes);
-        const effectiveTimes = applyDateTuneToTimes(day.date, yearRoundApplied);
-        return { ...day, times: effectiveTimes };
-      });
-      setYearData(effectiveDays);  
-    
+      const rawDays = await getYearRawDays(now.getFullYear());
+      setYearData(rawDays);
     } catch (err) {
       setYearData(null);
       setYearDataError(err.message || 'Could not load year prayer times.');
@@ -161,6 +234,22 @@ export default function EspSyncScreen() {
       setPreparingYearData(false);
     }
   }, []);
+
+  // Same pipeline MonthPrayerScreen uses to draw the chart, run against the
+  // CURRENT tune values every time it's called: global tune -> Ramadan ->
+  // year-round exact time -> date-specific tune, plus deviceTune for the
+  // Jama'at/Tarabih fields.
+  const buildEffectiveDays = (rawDays) => {
+    const tune = getTune();
+    return rawDays.map((day) => {
+      const baseTimes = applyBaseTuneToTimes(day.times, tune);
+      const ramadanTimes = applyRamadanTuneToTimes(day.hijri, baseTimes);
+      const yearRoundApplied = applyYearRoundTimesToTimes(day.date, ramadanTimes);
+      const effectiveTimes = applyDateTuneToTimes(day.date, yearRoundApplied);
+      const deviceTune = computeDeviceTuneForDay(day.date, effectiveTimes, tune);
+      return { ...day, times: effectiveTimes, deviceTune };
+    });
+  };
 
   // Shared retry used by both status boxes below — always retries today's
 // data first, then year's, mirroring the same safe sequencing already used
@@ -329,22 +418,126 @@ const retryPrepData = useCallback(() => {
       clearTimeout(wifiDoneTimerRef.current);
       wifiDoneTimerRef.current = null;
     }
-    setWifiProgress({ index: 0, total: yearData.length * 4 });
+    // Rebuilt from the raw cache with the tune values as they are RIGHT NOW,
+    // so tuning done after connecting is included.
+    const effectiveYearData = buildEffectiveDays(yearData);
+    const totalRows = effectiveYearData.length * 4;
+    setWifiProgress({ index: 0, total: totalRows });
+
     try {
-      await sendDateTimeAndYearAllRowsOverWifi(ESP_HOTSPOT_IP, todayData.hijri, yearData, getTune(), {
-        onProgress: ({ dayIndex, rowIndex, rowsPerDay, totalDays }) =>
-          setWifiProgress({ index: dayIndex * rowsPerDay + rowIndex + 1, total: totalDays * rowsPerDay }),
+      await activateKeepAwakeAsync('esp-year-sync');
+    } catch (e) {
+      // Not fatal — only keeps the screen on while the app is in front.
+    }
+
+    // The actual send. When it runs inside the Android foreground service
+    // (below) it keeps going after the user presses Home, and every
+    // progress tick also moves the notification's progress bar.
+    // Android 13+ hides the progress notification unless the user has
+    // allowed notifications, so ask now (no-op if already granted).
+    try {
+      const perm = await Notifications.getPermissionsAsync();
+      if (perm.status !== 'granted') await Notifications.requestPermissionsAsync();
+    } catch (e) {
+      console.log('[EspSync] notification permission check failed', e?.message);
+    }
+
+    // Diagnostics: shows in logcat whether JS keeps running after Home.
+    console.log('[EspSync] send starting, AppState =', AppState.currentState);
+    const appStateSub = AppState.addEventListener('change', (st) =>
+      console.log('[EspSync] AppState ->', st, 'at', new Date().toISOString())
+    );
+
+    let lastNotifiedPercent = -1;
+    const runSend = async () => {
+      await sendDateTimeAndYearAllRowsOverWifi(ESP_HOTSPOT_IP, todayData.hijri, effectiveYearData, getTune(), {
+        onProgress: ({ dayIndex, rowIndex, rowsPerDay, totalDays }) => {
+          const index = dayIndex * rowsPerDay + rowIndex + 1;
+          setWifiProgress({ index, total: totalDays * rowsPerDay });
+          if (index % 20 === 0) {
+            console.log('[EspSync] row', index, '/', totalDays * rowsPerDay, AppState.currentState, new Date().toISOString());
+          }
+
+          if (Platform.OS === 'android' && BackgroundService.isRunning()) {
+            const percent = calcPercent(index, totalDays * rowsPerDay);
+            // Only touch the notification when the whole-number percent
+            // changes (~100 updates for ~1460 rows), not on every row.
+            if (percent !== lastNotifiedPercent) {
+              lastNotifiedPercent = percent;
+              BackgroundService.updateNotification({
+                taskDesc: `Sending… ${percent}% — keep the Device powered on and nearby`,
+                progressBar: { max: totalDays * rowsPerDay, value: index },
+              }).catch(() => {});
+            }
+          }
+        },
       });
+    };
+
+    // Result notification. The Alert below can't show while the app is in
+    // the background, so a normal notification tells the user how it ended.
+    const notifyResult = (title, body) =>
+      Notifications.scheduleNotificationAsync({ content: { title, body }, trigger: null }).catch(() => {});
+
+    try {
+      if (Platform.OS === 'android') {
+        // Resolved by the task itself when it finishes. Deliberately NOT a
+        // setInterval poll: JS timers can stall while the app is in the
+        // background, which would delay the "done" handling.
+        let resolveTaskDone;
+        const taskDone = new Promise((resolve) => { resolveTaskDone = resolve; });
+
+        await BackgroundService.start(
+          async () => {
+            // Errors are caught here and handed back through a ref: if the
+            // task rejected, the library would never stop the service and
+            // the notification would stay up forever.
+            try {
+              await runSend();
+            } catch (e) {
+              sendErrorRef.current = e;
+            } finally {
+              resolveTaskDone();
+            }
+          },
+          {
+            taskName: 'EspYearSync',
+            taskTitle: 'Sending prayer times to Device',
+            taskDesc: 'Starting…',
+            taskIcon: { name: 'notification_icon', type: 'drawable' },
+            color: '#0E1320',
+            progressBar: { max: totalRows, value: 0 },
+            foregroundServiceType: ['dataSync'],
+          }
+        );
+        // start() resolves as soon as the service starts, not when the task
+        // finishes — wait for the task to end.
+        await taskDone;
+        if (sendErrorRef.current) {
+          const e = sendErrorRef.current;
+          sendErrorRef.current = null;
+          throw e;
+        }
+      } else {
+        await runSend();
+      }
+
       setWifiDone(true);
       wifiDoneTimerRef.current = setTimeout(() => {
         setWifiDone(false);
         wifiDoneTimerRef.current = null;
       }, DONE_DISPLAY_MS);
-      Alert.alert('Done', `Sent device date/time and ${yearData.length} days of prayer times to the Device — all 4 rows each.`);
+      const doneMsg = `Sent device date/time and ${effectiveYearData.length} days of prayer times to the Device — all 4 rows each.`;
+      notifyResult('Sync complete', doneMsg);
+      Alert.alert('Done', doneMsg);
     } catch (err) {
-      Alert.alert('Send failed', err?.response?.data?.message || err.message);
+      notifyResult('Sync failed', 'Could not finish sending to the Device. Reconnect and try again.');
+      Alert.alert('Send failed');
     } finally {
+      appStateSub.remove();
+      console.log('[EspSync] send finished/stopped at', new Date().toISOString());
       setWifiSending(false);
+      try { deactivateKeepAwake('esp-year-sync'); } catch (e) { /* app may be in background */ }
     }
   };
 
@@ -367,6 +560,7 @@ const retryPrepData = useCallback(() => {
       timeDoneTimerRef.current = null;
     }
     setTimeProgress({ index: 0, total: 2 });
+    await activateKeepAwakeAsync('esp-time-sync');
     try {
       await sendDateTimeOverWifi(ESP_HOTSPOT_IP, todayData.hijri, {
         onProgress: (sent, total) => setTimeProgress({ index: sent, total }),
@@ -381,6 +575,7 @@ const retryPrepData = useCallback(() => {
       Alert.alert('Send failed', err?.response?.data?.message || err.message);
     } finally {
       setTimeSending(false);
+      deactivateKeepAwake('esp-time-sync');
     }
   };
 
@@ -406,6 +601,15 @@ const retryPrepData = useCallback(() => {
     setSyncing(anySending);
   }, [anySending]);
   useEffect(() => () => setSyncing(false), []);
+
+  // Mirror hotspotConnected into EspConnectionContext so HomeScreen's
+  // header badge (a sibling of this screen, not a parent/child) can show
+  // live Connected/Disconnected status without HomeScreen needing to know
+  // anything about WiFi/hotspot internals.
+  useEffect(() => {
+    setEspConnected(hotspotConnected);
+  }, [hotspotConnected, setEspConnected]);
+  useEffect(() => () => setEspConnected(false), [setEspConnected]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>

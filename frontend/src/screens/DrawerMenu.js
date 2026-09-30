@@ -29,14 +29,27 @@ import { SOUND_LIBRARY } from "../notifications/notificationSetup";
 import { getTune, resetTune } from '../tune/tuneStore';
 import { resetRamadanTune } from '../tune/ramadanTuneStore';
 import { resetAllDateTunes, resetAllYearRoundTimes } from '../tune/dateTuneStore';
+import useTranslation from '../i18n/Usetranslation.js';
+import { SUPPORTED_LOCALES, setLocale } from '../i18n/localeStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.76;
 
 const VOLUME_OPTIONS = [
-  { key: "low", label: "Soft" },
-  { key: "medium", label: "Medium" },
-  { key: "high", label: "Loud" },
+  { key: "low", labelKey: "drawer.volumeSoft" },
+  { key: "medium", labelKey: "drawer.volumeMedium" },
+  { key: "high", labelKey: "drawer.volumeLoud" },
+];
+
+// Languages offered in the drawer's Language picker — code must match a
+// SUPPORTED_LOCALES entry in localeStore.js, nameKey resolves via
+// common.languageName in that language's own dictionary (so each name is
+// always shown in its own script, regardless of the currently active
+// language).
+const LANGUAGE_OPTIONS = [
+  { code: "en", nativeName: "English" },
+  { code: "bn", nativeName: "বাংলা" },
+  { code: "ur", nativeName: "اردو" },
 ];
 
 // TODO: point these at your real sound files (adjust paths/extensions to
@@ -50,35 +63,94 @@ const SOUND_ASSETS = {
 // Static require map for the 15-item "Choose Notification Sound" library
 // (SOUND_LIBRARY in notificationSetup.js) — require() needs a literal
 // string path, so this can't be built dynamically from that array; each
-// entry here must be kept in sync with it by key. All 15 currently point
-// at placeholder copies of the same clip — swap the .wav files' actual
-// content (keep filenames, or update both here and in app.json's sounds
-// array together) once you have distinct real sounds.
+// entry here must be kept in sync with it by key. Each sound now has three
+// intensity variants (low/medium/high) generated from its original
+// recording — see getLibrarySoundFile in notificationSetup.js for the
+// filename convention these must match.
 const NOTIFICATION_SOUND_ASSETS = {
-  sound_01: require("../../assets/sounds/salat_high_1.wav"),
-  sound_02: require("../../assets/sounds/salat_high_2.wav"),
-  sound_03: require("../../assets/sounds/salat_high_3.wav"),
-  sound_04: require("../../assets/sounds/salat_high_4.wav"),
-  sound_05: require("../../assets/sounds/salat_high_5.wav"),
-  sound_06: require("../../assets/sounds/salat_high_6.wav"),
-  sound_07: require("../../assets/sounds/salat_high_7.wav"),
-  sound_08: require("../../assets/sounds/salat_high_8.wav"),
-  sound_09: require("../../assets/sounds/salat_high_9.wav"),
-  sound_10: require("../../assets/sounds/salat_high_10.wav"),
-  sound_11: require("../../assets/sounds/salat_high_11.wav"),
-  sound_12: require("../../assets/sounds/salat_high_12.wav"),
-  sound_13: require("../../assets/sounds/salat_high_13.wav"),
-  sound_14: require("../../assets/sounds/salat_high_14.wav"),
-  sound_15: require("../../assets/sounds/salat_high_15.wav"),
+  sound_01: {
+    low: require("../../assets/sounds/salat_high_1_low.wav"),
+    medium: require("../../assets/sounds/salat_high_1.wav"),
+    high: require("../../assets/sounds/salat_high_1_high.wav"),
+  },
+  sound_02: {
+    low: require("../../assets/sounds/salat_high_2_low.wav"),
+    medium: require("../../assets/sounds/salat_high_2.wav"),
+    high: require("../../assets/sounds/salat_high_2_high.wav"),
+  },
+  sound_03: {
+    low: require("../../assets/sounds/salat_high_3_low.wav"),
+    medium: require("../../assets/sounds/salat_high_3.wav"),
+    high: require("../../assets/sounds/salat_high_3_high.wav"),
+  },
+  sound_04: {
+    low: require("../../assets/sounds/salat_high_4_low.wav"),
+    medium: require("../../assets/sounds/salat_high_4.wav"),
+    high: require("../../assets/sounds/salat_high_4_high.wav"),
+  },
+  sound_05: {
+    low: require("../../assets/sounds/salat_high_5_low.wav"),
+    medium: require("../../assets/sounds/salat_high_5.wav"),
+    high: require("../../assets/sounds/salat_high_5_high.wav"),
+  },
+  sound_06: {
+    low: require("../../assets/sounds/salat_high_6_low.wav"),
+    medium: require("../../assets/sounds/salat_high_6.wav"),
+    high: require("../../assets/sounds/salat_high_6_high.wav"),
+  },
+  sound_07: {
+    low: require("../../assets/sounds/salat_high_7_low.wav"),
+    medium: require("../../assets/sounds/salat_high_7.wav"),
+    high: require("../../assets/sounds/salat_high_7_high.wav"),
+  },
+  sound_08: {
+    low: require("../../assets/sounds/salat_high_8_low.wav"),
+    medium: require("../../assets/sounds/salat_high_8.wav"),
+    high: require("../../assets/sounds/salat_high_8_high.wav"),
+  },
+  sound_09: {
+    low: require("../../assets/sounds/salat_high_9_low.wav"),
+    medium: require("../../assets/sounds/salat_high_9.wav"),
+    high: require("../../assets/sounds/salat_high_9_high.wav"),
+  },
+  sound_10: {
+    low: require("../../assets/sounds/salat_high_10_low.wav"),
+    medium: require("../../assets/sounds/salat_high_10.wav"),
+    high: require("../../assets/sounds/salat_high_10_high.wav"),
+  },
+  sound_11: {
+    low: require("../../assets/sounds/salat_high_11_low.wav"),
+    medium: require("../../assets/sounds/salat_high_11.wav"),
+    high: require("../../assets/sounds/salat_high_11_high.wav"),
+  },
+  sound_12: {
+    low: require("../../assets/sounds/salat_high_12_low.wav"),
+    medium: require("../../assets/sounds/salat_high_12.wav"),
+    high: require("../../assets/sounds/salat_high_12_high.wav"),
+  },
+  sound_13: {
+    low: require("../../assets/sounds/salat_high_13_low.wav"),
+    medium: require("../../assets/sounds/salat_high_13.wav"),
+    high: require("../../assets/sounds/salat_high_13_high.wav"),
+  },
+  sound_14: {
+    low: require("../../assets/sounds/salat_high_14_low.wav"),
+    medium: require("../../assets/sounds/salat_high_14.wav"),
+    high: require("../../assets/sounds/salat_high_14_high.wav"),
+  },
+  sound_15: {
+    low: require("../../assets/sounds/salat_high_15_low.wav"),
+    medium: require("../../assets/sounds/salat_high_15.wav"),
+    high: require("../../assets/sounds/salat_high_15_high.wav"),
+  },
 };
 
-// "Volume" is handled specially (opens the intensity picker below) — every
-// other row here still just shows the generic "coming soon" placeholder.
+// "Language" and "Volume" are handled specially (each opens its own
+// picker below) — every other row here still just shows the generic
+// "coming soon" placeholder.
 const ITEMS_MAIN = [
-  { icon: "🌐", label: "Language" },
-  { icon: "🔊", label: "Volume" },
  
-
+  { icon: "🔊", labelKey: "drawer.volume", id: "volume" },
 ];
 
 const ITEMS_SHARE = [
@@ -100,9 +172,11 @@ function DrawerRow({ icon, label, onPress, labelStyle }) {
 }
 
 export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
+  const { t, locale } = useTranslation();
   const insets = useSafeAreaInsets();
   const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [volumeModalVisible, setVolumeModalVisible] = useState(false);
   const [volumeLevel, setVolumeLevelState] = useState(getVolumeLevel());
   const [soundModalVisible, setSoundModalVisible] = useState(false);
@@ -135,6 +209,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
   useEffect(() => {
     return () => {
       if (previewPlayerRef.current) {
+        previewPlayerRef.current.pause();
         previewPlayerRef.current.remove();
         previewPlayerRef.current = null;
       }
@@ -208,7 +283,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
   };
 
   const handlePlaceholder = (label) => {
-    Alert.alert(label, "This feature is coming soon.");
+    Alert.alert(label, t("drawer.comingSoonBody"));
   };
 
   // TODO: once the iOS build is listed on the App Store, replace
@@ -232,8 +307,8 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
     if (Platform.OS === "ios") {
       if (!IOS_APP_STORE_ID) {
         Alert.alert(
-          "Rate the app",
-          "A2salah isn't on the App Store yet — check back soon!",
+          t("drawer.rateAppNotOnStoreTitle"),
+          t("drawer.rateAppNotOnStoreBody"),
         );
         return;
       }
@@ -245,7 +320,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
       return;
     }
 
-    Alert.alert("Rate the app", "This feature is coming soon.");
+    Alert.alert(t("drawer.rateApp"), t("drawer.comingSoonBody"));
   };
 
   const handleTune = () => {
@@ -319,11 +394,11 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
   const handleSubmitAddId = async () => {
     const { id, password, confirmPassword } = addIdForm;
     if (!id.trim() || !password) {
-      Alert.alert("Missing info", "Please fill in both ID and password.");
+      Alert.alert(t("drawer.missingInfoTitle"), t("drawer.missingInfoBody"));
       return;
     }
     if (addIdRole === "admin" && password !== confirmPassword) {
-      Alert.alert("Passwords don't match", "Password and Confirm Password must be the same.");
+      Alert.alert(t("drawer.passwordMismatchTitle"), t("drawer.passwordMismatchBody"));
       return;
     }
 
@@ -334,8 +409,11 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
       // the submission locally, mirroring the other "coming soon" rows.
       await new Promise((resolve) => setTimeout(resolve, 300));
       Alert.alert(
-        "ID created",
-        `${addIdRole === "admin" ? "Admin" : "User"} ID "${id.trim()}" has been saved.`,
+        t("drawer.idCreatedTitle"),
+        t("drawer.idCreatedBody", {
+          role: addIdRole === "admin" ? t("drawer.admin") : t("drawer.user"),
+          id: id.trim(),
+        }),
       );
       handleCancelAddIdForm();
     } finally {
@@ -348,23 +426,52 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
     setVolumeModalVisible(true);
   };
 
+  // Mirrors notificationSoundStore's getEffectiveSoundFile(): if the user
+  // has explicitly picked one of the 15 library sounds, THAT is what will
+  // actually fire on a real reminder — the volume-intensity clip only
+  // applies when no explicit choice has been made. Preview must follow the
+  // same precedence, or tapping a volume chip plays a clip that isn't the
+  // one the user will really hear.
+  const getEffectivePreviewAsset = (level) => {
+    const entryAssets = selectedSoundKey && NOTIFICATION_SOUND_ASSETS[selectedSoundKey];
+    if (entryAssets) {
+      return entryAssets[level] || entryAssets.medium;
+    }
+    return SOUND_ASSETS[level];
+  };
+
   const handleSelectVolume = async (level) => {
     setVolumeLevelState(level);
     await setVolumeLevel(level);
+    // Fire the effective sound immediately on tap, same as the 15-sound
+    // picker's handleSelectSound does — otherwise the chip looks unresponsive
+    // until the separate "Preview" button is pressed.
+    playPreview(getEffectivePreviewAsset(level));
   };
 
-  // Plays the currently selected intensity's sound file immediately, so the
-  // preview is instant instead of waiting on a scheduled OS notification.
+  // Plays whichever sound will actually fire for a real reminder right now,
+  // so the preview is instant instead of waiting on a scheduled OS
+  // notification.
   const handlePreviewVolume = () => {
-    playPreview(SOUND_ASSETS[volumeLevel]);
+    playPreview(getEffectivePreviewAsset(volumeLevel));
   };
 
-  const handleMenuItemPress = (label) => {
-    if (label === "Volume") {
+  const handleOpenLanguage = () => {
+    setLanguageModalVisible(true);
+  };
+
+  const handleSelectLanguage = (code) => {
+    setLocale(code);
+    setLanguageModalVisible(false);
+  };
+
+  const handleMenuItemPress = (item) => {
+    if (item.id === "volume") {
       handleOpenVolume();
       return;
     }
-    handlePlaceholder(label);
+  
+    handlePlaceholder(t(item.labelKey));
   };
 
   const handleOpenSoundPicker = () => {
@@ -374,6 +481,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
 
   const stopPreview = () => {
     if (previewPlayerRef.current) {
+      previewPlayerRef.current.pause();
       previewPlayerRef.current.remove();
       previewPlayerRef.current = null;
     }
@@ -395,7 +503,10 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
   const handleSelectSound = async (key) => {
     setSelectedSoundKeyState(key);
     await setSelectedSound(key);
-    playPreview(NOTIFICATION_SOUND_ASSETS[key]);
+    // Preview at the CURRENT volume intensity, not always "medium" — this
+    // is what will actually fire for a real reminder (see
+    // notificationSoundStore's getEffectiveSoundFile).
+    playPreview(NOTIFICATION_SOUND_ASSETS[key][volumeLevel]);
   };
 
   // Reverts to the existing Volume-intensity clip instead of one of the
@@ -475,7 +586,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
               ]}
             >
               {/* App title */}
-              <Text style={styles.appTitle}>A2salah</Text>
+              <Text style={styles.appTitle}>{t("drawer.appTitle")}</Text>
 
               {/* Location row */}
               <View style={styles.divider} />
@@ -490,37 +601,37 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
               {/* Main settings */}
               {ITEMS_MAIN.map((item) => (
                 <DrawerRow
-                  key={item.label}
+                  key={item.id}
                   icon={item.icon}
-                  label={item.label}
-                  onPress={() => handleMenuItemPress(item.label)}
+                  label={t(item.labelKey)}
+                  onPress={() => handleMenuItemPress(item)}
                 />
               ))}
 
               <DrawerRow
                 icon="🔔"
-                label="Choose Notification Sound"
+                label={t("drawer.chooseNotificationSound")}
                 onPress={handleOpenSoundPicker}
               />
            
               <DrawerRow
                 icon="🎚️"
-                label="Tune Prayer Timings"
+                label={t("drawer.tunePrayerTimings")}
                 onPress={handleTune}
               />
               <DrawerRow
                 icon="🗓️"
-                label="Tune a Specific Date"
+                label={t("drawer.tuneSpecificDate")}
                 onPress={handleDateTune}
               />
                 <DrawerRow
                 icon="🔄"
-                label="Reset Chart"
+                label={t("drawer.resetChart")}
                 onPress={handleReset}
               />
               <DrawerRow
                 icon="🆔"
-                label="Add ID"
+                label={t("drawer.addId")}
                 onPress={handleOpenAddId}
               />
 
@@ -528,44 +639,44 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
 
               {/* Contact Us */}
               <View style={styles.sectionGap} />
-              <Text style={styles.sectionTitle}>CONTACT US</Text>
+              <Text style={styles.sectionTitle}>{t("drawer.contactUs")}</Text>
               <TouchableOpacity onPress={handleEmail} style={styles.textRow}>
-                <Text style={styles.textRowLabel}>Send us an email</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.sendEmail")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleReportIssue}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>Report an issue</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.reportIssue")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSuggestFeature}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>Suggest a feature</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.suggestFeature")}</Text>
               </TouchableOpacity>
 
               {/* About */}
               <View style={styles.sectionGap} />
-              <Text style={styles.sectionTitle}>A2SALAH</Text>
+              <Text style={styles.sectionTitle}>{t("drawer.aboutSection")}</Text>
               <TouchableOpacity
                 onPress={handleAbout}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>About A2salah</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.aboutApp")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleRateApp}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>Rate the app</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.rateApp")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handlePlaceholder("Invite friends")}
+                onPress={() => handlePlaceholder(t("drawer.inviteFriends"))}
                 style={styles.textRow}
               >
                 <Text style={styles.textRowLabel}>
-                  Invite friends to A2salah
+                  {t("drawer.inviteFriends")}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -573,44 +684,44 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                 style={styles.textRow}
               >
                 <Text style={styles.textRowLabel}>
-                  Terms of use and Privacy
+                  {t("drawer.termsPrivacy")}
                 </Text>
               </TouchableOpacity>
               <View style={styles.textRow}>
                 <Text style={styles.versionText}>
-                  Current version {APP_VERSION}
+                  {t("drawer.currentVersion", { version: APP_VERSION })}
                 </Text>
               </View>
 
               {/* Masarat / Developer links */}
               <View style={styles.sectionGap} />
-              <Text style={styles.sectionTitle}>A2MATION </Text>
+              <Text style={styles.sectionTitle}>{t("drawer.developerSection")} </Text>
               <TouchableOpacity
                 onPress={() => Linking.openURL("https://a2mation.com")}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>Our Website</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.ourWebsite")}</Text>
               </TouchableOpacity>
              
 
                <View style={styles.sectionGap} />
-              <Text style={styles.sectionTitle}>OTHER APP</Text>
+              <Text style={styles.sectionTitle}>{t("drawer.otherAppSection")}</Text>
              
               <TouchableOpacity
                  onPress={() => Linking.openURL("https://play.google.com/store/apps/details?id=com.A2mation.A2Gold")}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>A2Gold</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.otherApp")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                Linking.openURL("market://dev?id=A2mation").catch(() => {
-                Linking.openURL("https://play.google.com/store/apps/dev?id=A2mation");
+                Linking.openURL("market://dev?id=6595292842765885781").catch(() => {
+                Linking.openURL("https://play.google.com/store/apps/dev?id=6595292842765885781");
               });
               }}
                 style={styles.textRow}
               >
-                <Text style={styles.textRowLabel}>Our other apps</Text>
+                <Text style={styles.textRowLabel}>{t("drawer.ourOtherApps")}</Text>
               </TouchableOpacity>
             
             
@@ -619,6 +730,50 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
             </ScrollView>
           </Animated.View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={languageModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setLanguageModalVisible(false)}
+      >
+        <Pressable
+          style={styles.volumeModalOverlay}
+          onPress={() => setLanguageModalVisible(false)}
+        >
+          <Pressable style={styles.volumeModalCard} onPress={() => {}}>
+            <Text style={styles.volumeModalTitle}>{t("drawer.chooseLanguage")}</Text>
+            <Text style={styles.volumeModalDescription}>
+              {t("drawer.chooseLanguageDescription")}
+            </Text>
+
+            <View style={{ marginTop: 16 }}>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.code}
+                  onPress={() => handleSelectLanguage(option.code)}
+                  style={styles.soundRow}
+                  activeOpacity={0.65}
+                >
+                  <Text style={styles.soundRowLabel}>{option.nativeName}</Text>
+                  {locale === option.code && (
+                    <Text style={styles.soundRowCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.volumeModalActions}>
+              <TouchableOpacity
+                style={styles.volumeDoneBtn}
+                onPress={() => setLanguageModalVisible(false)}
+              >
+                <Text style={styles.volumeDoneBtnText}>{t("common.done")}</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -632,11 +787,9 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
           onPress={() => setVolumeModalVisible(false)}
         >
           <Pressable style={styles.volumeModalCard} onPress={() => {}}>
-            <Text style={styles.volumeModalTitle}>Reminder Volume</Text>
+            <Text style={styles.volumeModalTitle}>{t("drawer.reminderVolume")}</Text>
             <Text style={styles.volumeModalDescription}>
-              How intense should the reminder sound be? This is baked into the
-              sound itself, so it applies even when a reminder fires with the
-              app closed.
+              {t("drawer.reminderVolumeDescription")}
             </Text>
 
             <View style={styles.volumeChipRow}>
@@ -655,24 +808,24 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                       volumeLevel === option.key && styles.volumeChipTextActive,
                     ]}
                   >
-                    {option.label}
+                    {t(option.labelKey)}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             <View style={styles.volumeModalActions}>
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={styles.volumeCancelBtn}
                 onPress={handlePreviewVolume}
               >
-                <Text style={styles.volumeCancelBtnText}>Preview</Text>
-              </TouchableOpacity>
+                <Text style={styles.volumeCancelBtnText}>{t("drawer.preview")}</Text>
+              </TouchableOpacity> */}
               <TouchableOpacity
                 style={styles.volumeDoneBtn}
                 onPress={() => setVolumeModalVisible(false)}
               >
-                <Text style={styles.volumeDoneBtnText}>Done</Text>
+                <Text style={styles.volumeDoneBtnText}>Save</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -696,11 +849,9 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
           }}
         >
           <Pressable style={styles.soundModalCard} onPress={() => {}}>
-            <Text style={styles.volumeModalTitle}>Choose Notification Sound</Text>
+            <Text style={styles.volumeModalTitle}>{t("drawer.chooseNotificationSound")}</Text>
             <Text style={styles.volumeModalDescription}>
-              Pick the sound that plays for your prayer reminders — tap a
-              sound to preview and select it. This applies even when a
-              reminder fires with the app closed.
+              {t("drawer.chooseSoundDescription")}
             </Text>
 
             <ScrollView
@@ -713,9 +864,9 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                 activeOpacity={0.65}
               >
                 <View style={styles.soundRowTextWrap}>
-                  <Text style={styles.soundRowLabel}>Default (Volume-based)</Text>
+                  <Text style={styles.soundRowLabel}>{t("drawer.defaultVolumeBased")}</Text>
                   <Text style={styles.soundRowSubLabel}>
-                    Uses the intensity chosen in Volume
+                    {t("drawer.defaultVolumeBasedSub")}
                   </Text>
                 </View>
                 {selectedSoundKey === null && (
@@ -746,7 +897,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                   setSoundModalVisible(false);
                 }}
               >
-                <Text style={styles.volumeDoneBtnText}>Done</Text>
+                <Text style={styles.volumeDoneBtnText}>{t("common.done")}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -762,12 +913,9 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
         <View style={styles.resetModalOverlay}>
           <View style={styles.resetModalCard}>
             <Text style={styles.resetModalIcon}>⚠️</Text>
-            <Text style={styles.resetModalTitle}>Reset Chart</Text>
+            <Text style={styles.resetModalTitle}>{t("drawer.resetChartTitle")}</Text>
             <Text style={styles.resetModalDescription}>
-              This will permanently remove all your personal tuning
-              adjustments — Tune Prayer Timings, Ramadan tuning, and any
-              date-specific tunes — and restore the original backend
-              timings. This can't be undone.
+              {t("drawer.resetChartDescription")}
             </Text>
 
             <View style={styles.resetModalActions}>
@@ -775,7 +923,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                 style={styles.resetCancelBtn}
                 onPress={handleCancelReset}
               >
-                <Text style={styles.resetCancelBtnText}>Cancel</Text>
+                <Text style={styles.resetCancelBtnText}>{t("common.cancel")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -791,7 +939,9 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                     resetCountdown > 0 && styles.resetOkBtnTextDisabled,
                   ]}
                 >
-                  {resetCountdown > 0 ? `OK (${resetCountdown})` : "OK"}
+                  {resetCountdown > 0
+                    ? t("drawer.resetOkCountdown", { seconds: resetCountdown })
+                    : t("common.ok")}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -811,9 +961,9 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
           onPress={handleCancelAddIdRole}
         >
           <Pressable style={styles.volumeModalCard} onPress={() => {}}>
-            <Text style={styles.volumeModalTitle}>Add ID</Text>
+            <Text style={styles.volumeModalTitle}>{t("drawer.addIdTitle")}</Text>
             <Text style={styles.volumeModalDescription}>
-              Choose the type of ID you want to create.
+              {t("drawer.addIdDescription")}
             </Text>
 
             <View style={styles.addIdRoleRow}>
@@ -823,7 +973,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                 activeOpacity={0.7}
               >
                 <Text style={styles.addIdRoleIcon}>🛡️</Text>
-                <Text style={styles.addIdRoleLabel}>Admin</Text>
+                <Text style={styles.addIdRoleLabel}>{t("drawer.admin")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.addIdRoleOption}
@@ -831,7 +981,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                 activeOpacity={0.7}
               >
                 <Text style={styles.addIdRoleIcon}>👤</Text>
-                <Text style={styles.addIdRoleLabel}>User</Text>
+                <Text style={styles.addIdRoleLabel}>{t("drawer.user")}</Text>
               </TouchableOpacity>
             </View>
 
@@ -840,7 +990,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                 style={styles.volumeCancelBtn}
                 onPress={handleCancelAddIdRole}
               >
-                <Text style={styles.volumeCancelBtnText}>Cancel</Text>
+                <Text style={styles.volumeCancelBtnText}>{t("common.cancel")}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -864,32 +1014,32 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
           >
             <Pressable style={styles.volumeModalCard} onPress={() => {}}>
               <Text style={styles.volumeModalTitle}>
-                {addIdRole === "admin" ? "Add Admin ID" : "Add User ID"}
+                {addIdRole === "admin" ? t("drawer.addAdminId") : t("drawer.addUserId")}
               </Text>
               <Text style={styles.volumeModalDescription}>
                 {addIdRole === "admin"
-                  ? "Create a new admin login."
-                  : "Create a new user login."}
+                  ? t("drawer.createAdminLogin")
+                  : t("drawer.createUserLogin")}
               </Text>
 
               <View style={styles.addIdFormFields}>
-                <Text style={styles.addIdInputLabel}>ID</Text>
+                <Text style={styles.addIdInputLabel}>{t("drawer.idLabel")}</Text>
                 <TextInput
                   style={styles.addIdInput}
                   value={addIdForm.id}
                   onChangeText={(v) => handleAddIdFieldChange("id", v)}
-                  placeholder="Enter ID"
+                  placeholder={t("drawer.enterId")}
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
 
-                <Text style={styles.addIdInputLabel}>Password</Text>
+                <Text style={styles.addIdInputLabel}>{t("drawer.passwordLabel")}</Text>
                 <TextInput
                   style={styles.addIdInput}
                   value={addIdForm.password}
                   onChangeText={(v) => handleAddIdFieldChange("password", v)}
-                  placeholder="Enter password"
+                  placeholder={t("drawer.enterPassword")}
                   placeholderTextColor={colors.textMuted}
                   secureTextEntry
                   autoCapitalize="none"
@@ -897,14 +1047,14 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
 
                 {addIdRole === "admin" && (
                   <>
-                    <Text style={styles.addIdInputLabel}>Confirm Password</Text>
+                    <Text style={styles.addIdInputLabel}>{t("drawer.confirmPasswordLabel")}</Text>
                     <TextInput
                       style={styles.addIdInput}
                       value={addIdForm.confirmPassword}
                       onChangeText={(v) =>
                         handleAddIdFieldChange("confirmPassword", v)
                       }
-                      placeholder="Re-enter password"
+                      placeholder={t("drawer.reenterPassword")}
                       placeholderTextColor={colors.textMuted}
                       secureTextEntry
                       autoCapitalize="none"
@@ -918,7 +1068,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                   style={styles.volumeCancelBtn}
                   onPress={handleBackToAddIdRole}
                 >
-                  <Text style={styles.volumeCancelBtnText}>Back</Text>
+                  <Text style={styles.volumeCancelBtnText}>{t("common.back")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -929,7 +1079,7 @@ export default function DrawerMenu({ visible, onClose, city = "Kolkata" }) {
                   disabled={addIdSubmitting}
                 >
                   <Text style={styles.volumeDoneBtnText}>
-                    {addIdSubmitting ? "Saving..." : "Save"}
+                    {addIdSubmitting ? t("drawer.saving") : t("common.save")}
                   </Text>
                 </TouchableOpacity>
               </View>

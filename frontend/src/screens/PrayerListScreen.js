@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity } from 'react-native';
 import { light as colors } from '../theme/colors';
-import { getReminders, updateReminder } from '../api/api';
+import { loadReminders, subscribeReminders, setEnabledForPrayer } from '../notifications/remindersStore';
 import {
   loadMutedPrayers,
   setPrayerMuted,
@@ -108,13 +108,10 @@ export default function PrayerListScreen() {
   }, []);
 
   const fetchReminders = useCallback(async () => {
-    try {
-      const { data } = await getReminders();
-      setReminders(data);
-    } catch (err) {
-      console.warn('Failed to fetch reminders', err.message);
-    }
+    setReminders(await loadReminders());
   }, []);
+
+  useEffect(() => subscribeReminders(setReminders), []);
 
   // Pulls the WHOLE YEAR's raw (untuned) days for `date`'s year from
   // yearRawStore — which only actually calls the API on a genuine cache
@@ -262,10 +259,7 @@ export default function PrayerListScreen() {
       const forPrayer = reminders.filter((r) => r.prayer === key);
       if (forPrayer.length > 0) {
         const nextEnabled = !nextMuted;
-        setReminders((prev) =>
-          prev.map((r) => (r.prayer === key ? { ...r, enabled: nextEnabled } : r))
-        );
-        await Promise.all(forPrayer.map((r) => updateReminder(r._id, { enabled: nextEnabled })));
+        await setEnabledForPrayer(key, nextEnabled);
       }
     } catch (err) {
       console.warn('Failed to update mute for', key, err.message);
